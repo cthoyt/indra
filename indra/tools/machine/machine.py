@@ -14,7 +14,7 @@ from indra.sources import reach
 from collections import defaultdict
 from indra.databases import ndex_client
 import indra.tools.assemble_corpus as ac
-from indra.assemblers import CxAssembler
+from indra.assemblers import CxAssembler, PybelAssembler
 from indra.tools.machine import gmail_client
 from indra.tools.machine import twitter_client
 from indra.tools.gene_network import GeneNetwork
@@ -318,6 +318,20 @@ def filter_db_highbelief(stmts_in, db_names, belief_cutoff):
     return stmts_out
 
 
+def upload_bel_commons(statements, bel_commons_cred):
+    pa = PybelAssembler(
+        stmts=statements,
+        name=bel_commons_cred['name'],
+        version=time.strftime('%Y%m%d'),
+    )
+    pa.make_model()
+    pa.to_web(
+        host=bel_commons_cred.get('host'),
+        user=bel_commons_cred['user'],
+        password=bel_commons_cred.get['password'],
+    )
+
+
 def upload_new_ndex(model_path, new_stmts, ndex_cred):
     logger.info('Uploading to NDEx')
     logger.info(time.strftime('%c'))
@@ -417,8 +431,20 @@ def get_ndex_cred(config):
     return ndex_cred
 
 
+def get_bel_commons_cred(config):
+    bel_commons_cred = config.get('bel_commons')
+    if not bel_commons_cred:
+        return
+    if not bel_commons_cred.get('user') and not has_config('PYBEL_REMOTE_USER'):
+        logger.info('BEL Commons user is missing')
+    if not bel_commons_cred.get('password') and not has_config('PYBEL_REMOTE_PASSWORD'):
+        logger.info('BEL Commons password is missing')
+    return bel_commons_cred
+
+
 def run_machine(model_path, pmids, belief_threshold, search_genes=None,
-                ndex_cred=None, twitter_cred=None, grounding_map=None):
+                ndex_cred=None, twitter_cred=None, bel_commons_cred=None,
+                grounding_map=None):
     start_time_local = datetime.datetime.now(tzlocal.get_localzone())
     date_str = make_date_str()
 
@@ -504,6 +530,9 @@ def run_machine(model_path, pmids, belief_threshold, search_genes=None,
     if ndex_cred:
         upload_new_ndex(model_path, new_stmts, ndex_cred)
 
+    if bel_commons_cred:
+        upload_bel_commons(new_stmts, bel_commons_cred)
+
     # Print and tweet the status message
     logger.info('--- Final statistics ---')
     for k, v in sorted(stats.items(), key=lambda x: x[0]):
@@ -566,6 +595,12 @@ def run_with_search_helper(model_path, config, num_days=None):
         logger.info('Using NDEx with given credentials.')
     else:
         logger.info('Not using NDEx due to missing information.')
+
+    bel_commons_cred = get_bel_commons_cred(config)
+    if bel_commons_cred:
+        logger.info('Using BEL Commons with given credentials')
+    else:
+        logger.info('Not using BEL Commons due to missing information.')
 
     pmids = {}
     # Get email PMIDs
@@ -631,6 +666,7 @@ def run_with_search_helper(model_path, config, num_days=None):
         search_genes=search_genes,
         ndex_cred=ndex_cred,
         twitter_cred=twitter_cred,
+        bel_commons_cred=bel_commons_cred,
         grounding_map=grounding_map
     )
 
@@ -657,6 +693,7 @@ def run_with_pmids_helper(model_path, pmids):
     belief_threshold = config.get('belief_threshold', 0.95)
     twitter_cred = get_twitter_cred(config)
     ndex_cred = get_ndex_cred(config)
+    bel_commons_cred = get_bel_commons_cred(config)
 
     # Get optional grounding map
     gm_path = config.get('grounding_map_path')
@@ -677,5 +714,6 @@ def run_with_pmids_helper(model_path, pmids):
         belief_threshold,
         ndex_cred=ndex_cred,
         twitter_cred=twitter_cred,
+        bel_commons_cred=bel_commons_cred,
         grounding_map=grounding_map
     )

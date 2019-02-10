@@ -54,6 +54,8 @@ class GeneAssembler:
                 continue
             else:
                 for agent in agents:
+                    if agent is None:
+                        continue
                     if 'HGNC' in agent.db_refs:
                         self.genes.add(agent.name)
 

@@ -75,9 +75,9 @@ class GeneAssembler:
             elif format == 'ideogram':
                 print(self.to_ideogram_html(), file=file)
 
-    def to_gsea_str(self):
+    def to_gsea_str(self, first='# INDRA Genes'):
         """Return a SIF string of the assembled model."""
-        return '\n'.join(sorted(self.genes))
+        return first + '\n' + '\n'.join(sorted(self.genes))
 
     def to_ideogram_html(self):
         """Get an Ideogram HTML document as a string."""

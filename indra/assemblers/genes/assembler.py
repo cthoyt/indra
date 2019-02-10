@@ -87,14 +87,14 @@ class GeneAssembler:
 
     def get_ideogram_annotations(self):
         with open(REFSEQ_PATH) as file:
-            with csv.reader(file) as reader:
-                next(reader)  # skip header
-                return [
-                    {
-                        'name': symbol,
-                        'start': int(start),
-                        'stop': int(stop),
-                    }
-                    for _, symbol, start, stop in reader
-                    if symbol not in self.genes
-                ]
+            reader = csv.reader(file)
+            next(reader)  # skip header
+            return [
+                {
+                    'name': symbol,
+                    'start': int(start),
+                    'stop': int(stop),
+                }
+                for _, symbol, start, stop in reader
+                if symbol not in self.genes
+            ]

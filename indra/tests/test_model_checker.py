@@ -1,33 +1,26 @@
 from __future__ import absolute_import, print_function, unicode_literals
-from builtins import dict, str
+
 import os
 import unittest
-import pickle
-import random
+from collections import Counter
+
 import numpy as np
-import pygraphviz as pgv
 import networkx as nx
 from indra.statements import *
-from collections import Counter
 from pysb import *
-from pybel.dsl import *
-from pysb.core import SelfExporter
-from pysb.tools import render_reactions
 from indra.databases import hgnc_client
-from indra.explanation.model_checker import ModelChecker, PysbModelChecker, \
+from indra.explanation.model_checker import PysbModelChecker, \
     UnsignedGraphModelChecker, SignedGraphModelChecker, PybelModelChecker, \
-    PathResult
+    PathResult, signed_edges_to_signed_nodes
 from indra.explanation.model_checker.pysb import _mp_embeds_into, \
     _cp_embeds_into, _match_lhs, remove_im_params
 from indra.explanation.reporting import stmt_from_rule, stmts_from_pysb_path, \
-    stmts_from_pybel_path, stmts_from_indranet_path
+    stmts_from_pybel_path, stmts_from_indranet_path, PybelEdge, \
+    pybel_edge_to_english
 from indra.assemblers.pysb.assembler import PysbAssembler, \
-                                            set_base_initial_condition
+    set_base_initial_condition
 from indra.assemblers.indranet import IndraNetAssembler
 from indra.assemblers.pybel.assembler import PybelAssembler, _get_agent_node
-from pysb.tools import species_graph
-from pysb.bng import generate_equations
-from pysb import kappa
 from pysb.testing import with_model
 
 
@@ -451,8 +444,8 @@ def test_distinguish_path_polarity1():
     assert path_results[1].paths == [(('A_activate_B', 0), ('B_dephos_C', 0),
                                       ('C_T185_p_obs', 1))]
     assert path_results[2].paths == [], path_results[2].paths
-    assert path_results[3].paths == [(('B_dephos_C', 0), ('C_T185_p_obs', 1))]
-
+    assert path_results[3].paths == \
+        [(('B_dephos_C', 0), ('C_T185_p_obs', 1))], path_results[3].paths
 
 @with_model
 def test_distinguish_path_polarity2():
@@ -816,7 +809,7 @@ def test_check_rule_subject1():
     checks = mc.check_model()
     assert len(checks) == 1
     assert checks[0][0] == stmt_to_check
-    assert checks[0][1].paths == []
+    assert checks[0][1].paths == [], checks[0][1].paths
 
 
 def test_gef_activation():
@@ -1471,34 +1464,39 @@ def test_amount_vs_activation():
 
 
 # Test other ModelChecker types
-st1 = Activation(Agent('A', db_refs={'HGNC': 1}),
-                 Agent('B', db_refs={'HGNC': 2}))
-st2 = Inhibition(Agent('B', db_refs={'HGNC': 2}),
-                 Agent('D', db_refs={'HGNC': 4}))
-st3 = IncreaseAmount(Agent('C', db_refs={'HGNC': 3}),
-                     Agent('B', db_refs={'HGNC': 2}))
-st4 = DecreaseAmount(Agent('C', db_refs={'HGNC': 3}),
-                     Agent('D', db_refs={'HGNC': 4}))
-st5 = IncreaseAmount(Agent('D', db_refs={'HGNC': 4}),
-                     Agent('E', db_refs={'HGNC': 5}))
-st6 = Inhibition(Agent('A', db_refs={'HGNC': 1}),
-                 Agent('B', db_refs={'HGNC': 2}))
-st7 = DecreaseAmount(Agent('B', db_refs={'HGNC': 2}),
-                     Agent('D', db_refs={'HGNC': 4}))
-statements = [st1, st2, st3, st4, st5, st6, st7]
+st1 = Activation(Agent('A', db_refs={'HGNC': '1'}),
+                 Agent('B', db_refs={'HGNC': '2'}))
+st2 = Inhibition(Agent('B', db_refs={'HGNC': '2'}),
+                 Agent('D', db_refs={'HGNC': '4'}))
+st3 = IncreaseAmount(Agent('C', db_refs={'HGNC': '3'}),
+                     Agent('B', db_refs={'HGNC': '2'}))
+st4 = DecreaseAmount(Agent('C', db_refs={'HGNC': '3'}),
+                     Agent('D', db_refs={'HGNC': '4'}))
+st5 = IncreaseAmount(Agent('D', db_refs={'HGNC': '4'}),
+                     Agent('E', db_refs={'HGNC': '5'}))
+st6 = Inhibition(Agent('A', db_refs={'HGNC': '1'}),
+                 Agent('B', db_refs={'HGNC': '2'}))
+st7 = DecreaseAmount(Agent('B', db_refs={'HGNC': '2'}),
+                     Agent('D', db_refs={'HGNC': '4'}))
+st8 = IncreaseAmount(Agent('E', db_refs={'HGNC': '5'}),
+                     Agent('B', db_refs={'HGNC': '2'}))
+statements = [st1, st2, st3, st4, st5, st6, st7, st8]
 
-test_st1 = Activation(Agent('A', db_refs={'HGNC': 1}),
-                      Agent('E', db_refs={'HGNC': 5}))
-test_st2 = Inhibition(Agent('A', db_refs={'HGNC': 1}),
-                      Agent('E', db_refs={'HGNC': 5}))
-test_st3 = Activation(Agent('A', db_refs={'HGNC': 1}),
-                      Agent('C', db_refs={'HGNC': 3}))
-test_st4 = Activation(Agent('F', db_refs={'HGNC': 6}),
-                      Agent('B', db_refs={'HGNC': 2}))
-test_st5 = DecreaseAmount(Agent('B', db_refs={'HGNC': 2}),
-                          Agent('F', db_refs={'HGNC': 6}))
-test_st6 = ActiveForm(Agent('A', db_refs={'HGNC': 1}), None, True)
-test_statements = [test_st1, test_st2, test_st3, test_st4, test_st5, test_st6]
+test_st1 = Activation(Agent('A', db_refs={'HGNC': '1'}),
+                      Agent('E', db_refs={'HGNC': '5'}))
+test_st2 = Inhibition(Agent('A', db_refs={'HGNC': '1'}),
+                      Agent('E', db_refs={'HGNC': '5'}))
+test_st3 = Activation(Agent('A', db_refs={'HGNC': '1'}),
+                      Agent('C', db_refs={'HGNC': '3'}))
+test_st4 = Activation(Agent('F', db_refs={'HGNC': '6'}),
+                      Agent('B', db_refs={'HGNC': '2'}))
+test_st5 = DecreaseAmount(Agent('B', db_refs={'HGNC': '2'}),
+                          Agent('F', db_refs={'HGNC': '6'}))
+test_st6 = ActiveForm(Agent('A', db_refs={'HGNC': '1'}), None, True)
+test_st7 = DecreaseAmount(Agent('B', db_refs={'HGNC': '2'}),
+                          Agent('B', db_refs={'HGNC': '2'}))
+test_statements = [
+    test_st1, test_st2, test_st3, test_st4, test_st5, test_st6, test_st7]
 
 
 def test_unsigned_path():
@@ -1507,22 +1505,31 @@ def test_unsigned_path():
     umc = UnsignedGraphModelChecker(unsigned_model)
     umc.add_statements(test_statements)
     results = umc.check_model()
+    # Paths found
     assert results[0][1].result_code == 'PATHS_FOUND'
     assert results[0][1].paths[0] == (('A', 0), ('B', 0), ('D', 0), ('E', 0))
     assert results[1][1].result_code == 'PATHS_FOUND'
     assert results[1][1].paths[0] == (('A', 0), ('B', 0), ('D', 0), ('E', 0))
+    # Fail cases
     assert results[2][1].result_code == 'NO_PATHS_FOUND'
     assert results[3][1].result_code == 'SUBJECT_NOT_FOUND'
     assert results[4][1].result_code == 'OBJECT_NOT_FOUND'
     assert results[5][1].result_code == 'STATEMENT_TYPE_NOT_HANDLED'
+    # Loop paths
+    assert results[6][1].result_code == 'PATHS_FOUND'
+    assert results[6][1].paths[0] == (('B', 0), ('D', 0), ('E', 0), ('B', 0))
     # Test reporting
     path0 = results[0][1].paths[0]
     path1 = results[1][1].paths[0]
+    path6 = results[6][1].paths[0]
     stmts0 = stmts_from_indranet_path(
         path0, unsigned_model, False, False, statements)
     stmts1 = stmts_from_indranet_path(
         path0, unsigned_model, False, False, statements)
+    stmts6 = stmts_from_indranet_path(
+        path6, unsigned_model, False, False, statements)
     assert stmts0 == stmts1 == [[st1, st6], [st2, st7], [st5]]
+    assert stmts6 == [[st2, st7], [st5], [st8]]
 
 
 def test_signed_path():
@@ -1531,23 +1538,32 @@ def test_signed_path():
     smc = SignedGraphModelChecker(signed_model)
     smc.add_statements(test_statements)
     results = smc.check_model()
+    # Paths found
     assert results[0][1].result_code == 'PATHS_FOUND'
     assert results[0][1].paths[0] == (('A', 0), ('B', 1), ('D', 0), ('E', 0))
     assert results[1][1].result_code == 'PATHS_FOUND'
     assert results[1][1].paths[0] == (('A', 0), ('B', 0), ('D', 1), ('E', 1))
+    # Fail cases
     assert results[2][1].result_code == 'NO_PATHS_FOUND'
     assert results[3][1].result_code == 'SUBJECT_NOT_FOUND'
     assert results[4][1].result_code == 'OBJECT_NOT_FOUND'
     assert results[5][1].result_code == 'STATEMENT_TYPE_NOT_HANDLED'
+    # Loop paths
+    assert results[6][1].result_code == 'PATHS_FOUND'
+    assert results[6][1].paths[0] == (('B', 0), ('D', 1), ('E', 1), ('B', 1))
     # Test reporting
     path0 = results[0][1].paths[0]
     path1 = results[1][1].paths[0]
+    path6 = results[6][1].paths[0]
     stmts0 = stmts_from_indranet_path(
         path0, signed_model, True, False, statements)
     assert stmts0 == [[st6], [st2, st7], [st5]]
     stmts1 = stmts_from_indranet_path(
         path1, signed_model, True, False, statements)
     assert stmts1 == [[st1], [st2, st7], [st5]]
+    stmts6 = stmts_from_indranet_path(
+        path6, signed_model, True, False, statements)
+    assert stmts6 == [[st2, st7], [st5], [st8]]
 
 
 def test_pybel_path():
@@ -1556,40 +1572,192 @@ def test_pybel_path():
     pbmc = PybelModelChecker(pybel_model)
     pbmc.add_statements(test_statements)
     results = pbmc.check_model()
-    a = _get_agent_node(Agent('A', db_refs={'HGNC': 1}))[0]
-    b = _get_agent_node(Agent('B', db_refs={'HGNC': 2}))[0]
-    d = _get_agent_node(Agent('D', db_refs={'HGNC': 4}))[0]
-    e = _get_agent_node(Agent('E', db_refs={'HGNC': 5}))[0]
+    a = _get_agent_node(Agent('A', db_refs={'HGNC': '1'}))[0]
+    b = _get_agent_node(Agent('B', db_refs={'HGNC': '2'}))[0]
+    d = _get_agent_node(Agent('D', db_refs={'HGNC': '4'}))[0]
+    e = _get_agent_node(Agent('E', db_refs={'HGNC': '5'}))[0]
+    # Paths found
     assert results[0][1].result_code == 'PATHS_FOUND'
     assert results[0][1].paths[0] == ((a, 0), (b, 1), (d, 0), (e, 0))
     assert results[1][1].result_code == 'PATHS_FOUND'
     assert results[1][1].paths[0] == ((a, 0), (b, 0), (d, 1), (e, 1))
+    # Fail cases
     assert results[2][1].result_code == 'NO_PATHS_FOUND'
-    assert results[3][1].result_code == 'SUBJECT_NOT_FOUND'
+    assert results[3][1].result_code == 'SUBJECT_NOT_FOUND', results[3]
     assert results[4][1].result_code == 'OBJECT_NOT_FOUND'
     assert results[5][1].result_code == 'STATEMENT_TYPE_NOT_HANDLED'
+    # Loop paths
+    assert results[6][1].result_code == 'PATHS_FOUND'
+    assert results[6][1].paths[0] == ((b, 0), (d, 1), (e, 1), (b, 1))
     # Test reporting
     path0 = results[0][1].paths[0]
     path1 = results[1][1].paths[0]
+    path6 = results[6][1].paths[0]
     stmts0 = stmts_from_pybel_path(path0, pybel_model, False, statements)
-    assert stmts0 == [[st1, st6], [st2, st7], [st5]], stmts0
+    assert stmts0 == [[st6], [st2, st7], [st5]], stmts0
     stmts1 = stmts_from_pybel_path(path1, pybel_model, False, statements)
-    assert stmts1 == [[st1, st6], [st2, st7], [st5]], stmts1
+    assert stmts1 == [[st1], [st2, st7], [st5]], stmts1
+    stmts6 = stmts_from_pybel_path(path6, pybel_model, False, statements)
+    assert stmts6 == [[st2, st7], [st5], [st8]]
+
+
+def test_pybel_active_form_path():
+    braf = Agent('BRAF', db_refs={'HGNC': '1097'})
+    map2k1 = Agent('MAP2K1', db_refs={'HGNC': '6840'})
+    map2k1_phos = Agent('MAP2K1', db_refs={'HGNC': '6840'}, mods=[
+        ModCondition('phosphorylation', 'S', '218', True),
+        ModCondition('phosphorylation', 'S', '222', True)])
+    mapk1 = Agent('MAPK1', db_refs={'UP': 'P28482'})
+    mapk1_phos = Agent('MAPK1', db_refs={'UP': 'P28482'}, mods=[
+        ModCondition('phosphorylation', 'T', '185', True),
+        ModCondition('phosphorylation', 'Y', '187', True)])
+    elk1 = Agent('ELK1', db_refs={'HGNC': '3321'})
+    elk1_phos = Agent('ELK1', db_refs={'HGNC': '3321'}, mods=[
+        ModCondition('phosphorylation', 'S', '383', True),
+        ModCondition('phosphorylation', 'S', '389', True)])
+    stmts = [
+        Phosphorylation(braf, map2k1, 'S', '222'),
+        ActiveForm(map2k1_phos, 'activity', True),
+        Phosphorylation(map2k1, mapk1, 'Y', '187'),
+        ActiveForm(mapk1_phos, 'activity', True),
+        Phosphorylation(mapk1, elk1, 'S', '383'),
+        ActiveForm(elk1_phos, 'activity', True)]
+    pba = PybelAssembler(stmts)
+    pybel_model = pba.make_model()
+    pbmc = PybelModelChecker(pybel_model)
+    pbmc.add_statements([Activation(braf, elk1)])
+    results = pbmc.check_model(1, 10)
+    assert results[0][1].path_found, results
+    stmts_from_path = stmts_from_pybel_path(
+        results[0][1].paths[0], pybel_model, False, stmts)
+    assert stmts_from_path == [[stmt] for stmt in stmts]
+
+
+def test_pybel_refinements():
+    prkcb = Agent('PRKCB', db_refs={'TEXT': 'PRKCB', 'HGNC': '9395'})
+    gsk3b = Agent('GSK3B', db_refs={'TEXT': 'GSK3B', 'HGNC': '4617'})
+    map2k1 = Agent('MAP2K1', db_refs={'TEXT': 'MAP2K1', 'HGNC': '6840'})
+    mapk1 = Agent('MAPK1', db_refs={'TEXT': 'MAPK1', 'HGNC': '6871'})
+    mek = Agent('MEK', db_refs={'TEXT': 'MEK', 'FPLX': 'MEK'})
+    erk = Agent('ERK', db_refs={'TEXT': 'ERK', 'FPLX': 'ERK'})
+    # Model statements are refined versions of test statements
+    model_stmts = [Phosphorylation(prkcb, gsk3b, 'S', '9'),
+                   Phosphorylation(map2k1, mapk1)]
+    test_stmts = [Phosphorylation(prkcb, gsk3b, 'S'),
+                  Phosphorylation(mek, erk)]
+    pba = PybelAssembler(model_stmts)
+    pybel_model = pba.make_model()
+    pbmc = PybelModelChecker(pybel_model, test_stmts)
+    results = pbmc.check_model()
+    assert results[0][1].path_found
+    assert results[1][1].path_found
+    path0 = results[0][1].paths[0]
+    path1 = results[1][1].paths[0]
+    assert stmts_from_pybel_path(
+        path0, pybel_model, False, model_stmts) == [[model_stmts[0]]]
+    assert stmts_from_pybel_path(
+        path1, pybel_model, False, model_stmts) == [[model_stmts[1]]]
+
+
+def test_pybel_edge_types():
+    a = Agent('A', db_refs={'HGNC': '1'})
+    b = Agent('B', db_refs={'HGNC': '2'})
+    c = Agent('C', db_refs={'HGNC': '3'})
+    a_b = Agent('A', db_refs={'HGNC': '1'}, bound_conditions=[BoundCondition(b)])
+    c_phos = Agent('C', db_refs={'HGNC': '3'},
+                   mods=[ModCondition('phosphorylation', 'S', '218')])
+    model_stmts = [Complex([a, b]),
+                   Phosphorylation(b, c, 'S', '218')]
+    test_stmts = [Activation(a, c),
+                  Activation(b, c),
+                  Activation(b, a),
+                  Activation(b, a_b),
+                  Activation(c, c_phos)]
+    pba = PybelAssembler(model_stmts)
+    pybel_model = pba.make_model()
+    pbmc = PybelModelChecker(pybel_model, test_stmts)
+    # Do not include hasVariant and partOf edges at all
+    pbmc.graph = None
+    pbmc.get_graph(include_variants=False, symmetric_variant_links=False,
+                   include_components=False, symmetric_component_links=False)
+    results = pbmc.check_model()
+    assert not results[0][1].path_found
+    assert not results[1][1].path_found
+    assert not results[2][1].path_found
+    assert not results[3][1].path_found, results[3][1]
+    assert not results[4][1].path_found
+    # Include hasVariant and partOf edges without symmetric links
+    pbmc.graph = None
+    pbmc.get_graph(include_variants=True, symmetric_variant_links=False,
+                   include_components=True, symmetric_component_links=False)
+    results = pbmc.check_model()
+    assert not results[0][1].path_found
+    assert not results[1][1].path_found
+    assert not results[2][1].path_found
+    assert results[3][1].path_found
+    assert results[4][1].path_found
+    path3 = results[3][1].paths[0]
+    path4 = results[4][1].paths[0]
+    path_stmt_3 = stmts_from_pybel_path(
+        path3, pybel_model, False, model_stmts)[0][0]
+    path_stmt_4 = stmts_from_pybel_path(
+        path4, pybel_model, False, model_stmts)[0][0]
+    assert isinstance(path_stmt_3, PybelEdge)
+    assert path_stmt_3.relation == 'partOf'
+    assert isinstance(path_stmt_4, PybelEdge)
+    assert path_stmt_4.relation == 'hasVariant'
+    # Include symmetric links
+    pbmc.graph = None
+    pbmc.get_graph(include_variants=True, symmetric_variant_links=True,
+                   include_components=True, symmetric_component_links=True)
+    results = pbmc.check_model()
+    assert results[0][1].path_found
+    assert results[1][1].path_found
+    assert results[2][1].path_found
+    assert results[3][1].path_found
+    assert results[4][1].path_found
+
+
+def test_pybel_edge_to_english():
+    pe = PybelEdge(
+        Agent('EGF', bound_conditions=[BoundCondition(Agent('EGFR'))]),
+        Agent('EGF'), 'partOf', True)
+    s = pybel_edge_to_english(pe)
+    assert s == 'EGF bound to EGFR has a component EGF.'
+    pe = PybelEdge(
+        Agent('EGF'),
+        Agent('EGF', bound_conditions=[BoundCondition(Agent('EGFR'))]),
+        'partOf', False)
+    s = pybel_edge_to_english(pe)
+    assert s == 'EGF is a part of EGF bound to EGFR.'
+    pe = PybelEdge(
+        Agent('BRAF'),
+        Agent('BRAF', mods=[ModCondition('phosphorylation', 'T', '396')]),
+        'hasVariant', False)
+    s = pybel_edge_to_english(pe)
+    assert s == 'BRAF has a variant BRAF phosphorylated on T396.'
+    pe = PybelEdge(
+        Agent('BRAF', mods=[ModCondition('phosphorylation', 'T', '396')]),
+        Agent('BRAF'),
+        'hasVariant', True)
+    s = pybel_edge_to_english(pe)
+    assert s == 'BRAF phosphorylated on T396 is a variant of BRAF.'
 
 
 # Test graph conversion
 def test_signed_edges_to_nodes():
+    edge_dict = {'extra_data': {'list': ['value'], 'float': 0.123456},
+                 'weight': 0.987654}
     g = nx.MultiDiGraph()
-    g.add_edge('A', 'B', sign=0)
-    g.add_edge('A', 'C', sign=0)
-    g.add_edge('B', 'D', sign=1)
-    g.add_edge('C', 'D', sign=0)
-    g.add_edge('E', 'B', sign=1)
+    g.add_edge('A', 'B', sign=0, **edge_dict)
+    g.add_edge('A', 'C', sign=0, **edge_dict)
+    g.add_edge('B', 'D', sign=1, **edge_dict)
+    g.add_edge('C', 'D', sign=0, **edge_dict)
+    g.add_edge('E', 'B', sign=1, **edge_dict)
     assert len(g.edges) == 5
     assert len(g.nodes) == 5
-    mc = ModelChecker(g)
     # Create a signed nodes graph without pruning
-    sng = mc.signed_edges_to_signed_nodes(g, prune_nodes=False)
+    sng = signed_edges_to_signed_nodes(g, prune_nodes=False)
     assert len(sng.nodes) == 10
     assert len(sng.edges) == 10
     assert set(sng.nodes) == {('A', 0), ('A', 1), ('B', 0), ('B', 1), ('C', 0),
@@ -1599,12 +1767,56 @@ def test_signed_edges_to_nodes():
     assert (('B', 0), ('D', 1)) in sng.edges
     assert (('B', 1), ('D', 0)) in sng.edges
     # Create a signed nodes graph with pruning
-    psng = mc.signed_edges_to_signed_nodes(g, prune_nodes=True)
+    psng = signed_edges_to_signed_nodes(g, prune_nodes=True)
     assert len(psng.nodes) == 7
     assert ('A', 1) not in psng.nodes
     assert ('C', 1) not in psng.nodes
     assert ('E', 1) not in psng.nodes
     assert len(psng.edges) == 6
+    # Create a signed nodes graph with weight data with pruning
+    psng_wed = signed_edges_to_signed_nodes(g, prune_nodes=True,
+                                            copy_edge_data={'weight'})
+    for edge in psng_wed.edges:
+        assert psng_wed.edges[edge]['weight'] == 0.987654
+        assert 'sign' not in psng_wed.edges[edge]
+        assert 'extra_data' not in psng_wed.edges[edge]
+
+    # Create a signed nodes graph with all edge data with pruning
+    psng_ed = signed_edges_to_signed_nodes(g, prune_nodes=True,
+                                            copy_edge_data=True)
+    for edge in psng_ed.edges:
+        assert psng_ed.edges[edge]['weight'] == 0.987654
+        assert 'sign' not in psng_ed.edges[edge]
+        assert 'extra_data' in psng_ed.edges[edge],\
+            psng_ed.edges[edge].items()
+        assert psng_ed.edges[edge]['extra_data']['list'] == ['value']
+        assert psng_ed.edges[edge]['extra_data']['float'] == 0.123456
+
+
+def test_path_fixed_length():
+    model_stmts = [
+        IncreaseAmount(Agent('A', db_refs={'HGNC': '1'}),
+                       Agent('B', db_refs={'HGNC': '2'})),
+        IncreaseAmount(Agent('B', db_refs={'HGNC': '2'}),
+                       Agent('C', db_refs={'HGNC': '3'})),
+        IncreaseAmount(Agent('C', db_refs={'HGNC': '3'}),
+                       Agent('D', db_refs={'HGNC': '4'})),
+        IncreaseAmount(Agent('A', db_refs={'HGNC': '1'}),
+                       Agent('C', db_refs={'HGNC': '3'})),
+        IncreaseAmount(Agent('B', db_refs={'HGNC': '2'}),
+                       Agent('D', db_refs={'HGNC': '4'}))
+    ]
+    test_stmt = IncreaseAmount(Agent('A', db_refs={'HGNC': 1}),
+                               Agent('D', db_refs={'HGNC': 4}))
+    # There are two two-step paths and one three-step path.
+    # ModelChecker should return all two-step paths.
+    ia = IndraNetAssembler(model_stmts)
+    unsigned_model = ia.make_model(graph_type='digraph')
+    umc = UnsignedGraphModelChecker(unsigned_model)
+    res = umc.check_statement(test_stmt, max_paths=10, max_path_length=5)
+    assert res.path_found
+    assert len(res.paths) == 2, len(res.paths)
+    assert len(res.paths[0]) == len(res.paths[1]) == 3  # 3 nodes = 2 edges/steps
 
 
 if __name__ == '__main__':

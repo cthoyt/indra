@@ -26,6 +26,9 @@ url_prefixes = {
     'HMDB': '%s/hmdb/' % identifiers_url,
     'FPLX': '%s/fplx/' % identifiers_url,
     'REFSEQ_PROT': '%s/refseq:' % identifiers_url,
+    'EFO': '%s/efo/' % identifiers_url,
+    'HP': '%s/hp/' % identifiers_url,
+    'DOID': '%s/' % identifiers_url,  # note that IDs start with DOID:
     'NXPFA': 'https://www.nextprot.org/term/FA-',
     'SIGNOR': 'https://signor.uniroma2.it/relation_result.php?id=',
     'NONCODE': 'http://www.noncode.org/show_gene.php?id=NONHSAG',
@@ -91,6 +94,10 @@ def get_identifiers_url(db_name, db_id):
         else:  # Assmuing HGNC symbol
             url = 'http://www.lncrnadb.org/%s/' % db_id
     elif db_name == 'TEXT':
+        return None
+    # TODO: we should return the parent UniProt ID here but only once that
+    # can be obtained from protmapper in a faster way
+    elif db_name == 'UPPRO':
         return None
     else:
         logger.warning('Unhandled name space %s' % db_name)

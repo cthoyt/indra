@@ -4,6 +4,7 @@ For information on the Elsevier API, see:
   - Authentication: https://dev.elsevier.com/tecdoc_api_authentication.html
 """
 import os
+import re
 import logging
 import textwrap
 import datetime
@@ -227,7 +228,7 @@ def extract_text(xml_string):
     """Get text from the body of the given Elsevier xml."""
     paragraphs = extract_paragraphs(xml_string)
     if paragraphs:
-        return '\n'.join(paragraphs) + '\n'
+        return '\n'.join(re.sub('\s+', ' ', p) for p in paragraphs) + '\n'
     else:
         return None
 
@@ -375,7 +376,10 @@ def search_science_direct(query_str, field_name, year=None, loaded_after=None):
         if total_results == 0:
             logger.info('Search result was empty')
             return []
-        entries = res_json['results']
+        try:
+            entries = res_json['results']
+        except KeyError:
+            entries = []
         parts = [entry[field_name] for entry in entries]
         all_parts += parts
         # Get next batch

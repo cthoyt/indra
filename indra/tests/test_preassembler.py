@@ -792,30 +792,47 @@ def test_normalize_equals():
 
 
 def test_normalize_opposites():
-    concept1 = ('wm/concept/causal_factor/economic_and_commerce/'
-                'economic_activity/market/supply/food_supply')
-    concept2 = 'wm/concept/causal_factor/access/food_shortage'
+    concept1 = 'wm/concept/causal_factor/food_security/food_stability'
+    concept2 = 'wm/concept/causal_factor/food_insecurity/food_instability'
     concept3 = ('wm/concept/causal_factor/environmental/meteorologic/'
                 'precipitation/flooding')
+
+    # First test the inherently positive being the main grounding
     dbr = {'WM': [(concept1, 1.0), (concept2, 0.5), (concept3, 0.1)]}
     ev = Event(Concept('x', db_refs=dbr),
                delta=QualitativeDelta(polarity=1))
-    pa = Preassembler(hierarchies=get_wm_hierarchies(),
-                      stmts=[ev])
+    pa = Preassembler(hierarchies=get_wm_hierarchies(), stmts=[ev])
     pa.normalize_opposites(ns='WM')
+    # We are normalizing to food supply since that is the inherently
+    # positive concept
     assert pa.stmts[0].concept.db_refs['WM'][0] == \
-        (concept2, 1.0), pa.stmts[0].concept.db_refs['WM']
+        (concept1, 1.0), pa.stmts[0].concept.db_refs['WM']
     assert pa.stmts[0].concept.db_refs['WM'][1] == \
-        (concept2, 0.5), pa.stmts[0].concept.db_refs['WM']
+        (concept1, 0.5), pa.stmts[0].concept.db_refs['WM']
     assert pa.stmts[0].concept.db_refs['WM'][2] == \
         (concept3, 0.1), pa.stmts[0].concept.db_refs['WM']
+    assert pa.stmts[0].delta.polarity == 1
+
+    # Next test the inherently negative being the main grounding
+    dbr = {'WM': [(concept2, 1.0), (concept1, 0.5), (concept3, 0.1)]}
+    ev = Event(Concept('x', db_refs=dbr),
+               delta=QualitativeDelta(polarity=1))
+    pa = Preassembler(hierarchies=get_wm_hierarchies(), stmts=[ev])
+    pa.normalize_opposites(ns='WM')
+    # We are normalizing to food supply since that is the inherently
+    # positive concept
+    assert pa.stmts[0].concept.db_refs['WM'][0] == \
+           (concept1, 1.0), pa.stmts[0].concept.db_refs['WM']
+    assert pa.stmts[0].concept.db_refs['WM'][1] == \
+           (concept1, 0.5), pa.stmts[0].concept.db_refs['WM']
+    assert pa.stmts[0].concept.db_refs['WM'][2] == \
+           (concept3, 0.1), pa.stmts[0].concept.db_refs['WM']
     assert pa.stmts[0].delta.polarity == -1
 
 
 def test_normalize_opposites_influence():
-    concept1 = ('wm/concept/causal_factor/economic_and_commerce/'
-                'economic_activity/market/supply/food_supply')
-    concept2 = 'wm/concept/causal_factor/access/food_shortage'
+    concept1 = 'wm/concept/causal_factor/food_security/food_stability'
+    concept2 = 'wm/concept/causal_factor/food_insecurity/food_instability'
     dbr1 = {'WM': [(concept1, 1.0), (concept2, 0.5)]}
     dbr2 = {'WM': [(concept2, 1.0), (concept1, 0.5)]}
     stmt = Influence(Event(Concept('x', db_refs=dbr1),
@@ -825,25 +842,23 @@ def test_normalize_opposites_influence():
     pa = Preassembler(hierarchies=get_wm_hierarchies(),
                       stmts=[stmt])
     pa.normalize_opposites(ns='WM')
-    assert pa.stmts[0].subj.delta.polarity == -1
-    assert pa.stmts[0].obj.delta.polarity == -1
+    assert pa.stmts[0].subj.delta.polarity == 1
+    assert pa.stmts[0].obj.delta.polarity == 1
 
 
 def test_normalize_opposites_association():
-    concept1 = ('wm/concept/causal_factor/economic_and_commerce/'
-                'economic_activity/market/supply/food_supply')
-    concept2 = 'wm/concept/causal_factor/access/food_shortage'
+    concept1 = 'wm/concept/causal_factor/food_security/food_stability'
+    concept2 = 'wm/concept/causal_factor/food_insecurity/food_instability'
     dbr1 = {'WM': [(concept1, 1.0), (concept2, 0.5)]}
     dbr2 = {'WM': [(concept2, 1.0), (concept1, 0.5)]}
     stmt = Association([Event(Concept('x', db_refs=dbr1),
                               delta=QualitativeDelta(polarity=1)),
                         Event(Concept('y', db_refs=dbr2),
                               delta=QualitativeDelta(polarity=-1))])
-    pa = Preassembler(hierarchies=get_wm_hierarchies(),
-                      stmts=[stmt])
+    pa = Preassembler(hierarchies=get_wm_hierarchies(), stmts=[stmt])
     pa.normalize_opposites(ns='WM')
-    assert pa.stmts[0].members[0].delta.polarity == -1
-    assert pa.stmts[0].members[1].delta.polarity == -1
+    assert pa.stmts[0].members[0].delta.polarity == 1
+    assert pa.stmts[0].members[1].delta.polarity == 1
 
 
 def test_agent_text_storage():
@@ -1035,3 +1050,23 @@ def test_matches_key_fun():
     stmts = run_preassembly([e1, e2, e3], matches_fun=event_location_matches,
                             refinement_fun=event_location_refinement)
     assert len(stmts) == 2, stmts
+
+
+def test_uppro_assembly():
+    ag1 = Agent('x', db_refs={'UP': 'P01019', 'UPPRO': 'PRO_0000032457'})
+    ag2 = Agent('y', db_refs={'UP': 'P01019', 'UPPRO': 'PRO_0000032458'})
+    assert ag1.get_grounding() == ('UPPRO', ag1.db_refs['UPPRO'])
+    assert ag2.get_grounding() == ('UPPRO', ag2.db_refs['UPPRO'])
+    stmt1 = Phosphorylation(None, ag1)
+    stmt2 = Phosphorylation(None, ag2)
+    assert stmt1.matches_key() != stmt2.matches_key()
+    pa = Preassembler(hierarchies, [stmt1, stmt2])
+    unique_stmts = pa.combine_duplicates()
+    assert len(unique_stmts) == 2, unique_stmts
+
+    from indra.tools import assemble_corpus as ac
+    stmts = ac.map_grounding([stmt1, stmt2])
+    pa = Preassembler(hierarchies, stmts)
+    unique_stmts = pa.combine_duplicates()
+    assert len(unique_stmts) == 2
+

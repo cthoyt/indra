@@ -14,6 +14,15 @@ Real-time feedback for assembly (:py:mod:`indra.tools.live_curation`)
 .. automodule:: indra.tools.live_curation
     :members:
 
+.. automodule:: indra.tools.live_curation.curator
+    :members:
+
+.. automodule:: indra.tools.live_curation.corpus
+    :members:
+
+.. automodule:: indra.tools.live_curation.util
+    :members:
+
 Build a network from a gene list (:py:mod:`indra.tools.gene_network`)
 ---------------------------------------------------------------------
 
@@ -38,14 +47,3 @@ The RAS Machine (:py:mod:`indra.tools.machine`)
 .. automodule:: indra.tools.machine
     :members:
 
-
-High-throughput Reading Tools (:py:mod:`indra.tools.reading`)
--------------------------------------------------------------
-
-.. toctree::
-   :maxdepth: 3
-
-   reading/pipelines
-   reading/interfaces
-   reading/tools
-   reading/utils

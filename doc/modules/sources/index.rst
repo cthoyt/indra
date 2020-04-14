@@ -41,6 +41,8 @@ Standard Molecular Pathway Databases
    biogrid/index
    hprd/index
    trrust
+   phosphoelm/index
+   virhostnet/index
 
 Custom Knowledge Bases
 ----------------------
@@ -51,3 +53,4 @@ Custom Knowledge Bases
    lincs_drug/index
    ndex_cx/index
    indra_db_rest/index
+   hypothesis/index

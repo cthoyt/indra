@@ -1,5 +1,6 @@
 import logging
-from .mapper import GroundingMapper
+from indra.preassembler.grounding_mapper.standardize \
+    import standardize_agent_name
 
 logger = logging.getLogger(__name__)
 
@@ -39,13 +40,21 @@ def run_adeft_disambiguation(stmt, agent, idx):
     idx : int
         The index of the new Agent's position in the Statement's agent list
         (needed to set annotations correctly).
+
+    Returns
+    -------
+    bool
+        True if disambiguation was successfully applied, and False otherwise.
+        Reasons for a False response can be the lack of evidence as well as
+        failure to obtain text for grounding disambiguation.
     """
+    success = False
     # If the Statement doesn't have evidence for some reason, then there is
     # no text to disambiguate by
     # NOTE: we might want to try disambiguating by other agents in the
     # Statement
     if not stmt.evidence:
-        return
+        return False
     # Initialize annotations if needed so Adeft predicted
     # probabilities can be added to Agent annotations
     annots = stmt.evidence[0].annotations
@@ -57,27 +66,44 @@ def run_adeft_disambiguation(stmt, agent, idx):
     else:
         annots['agents'] = {'adeft': [None for _ in stmt.agent_list()]}
     grounding_text = _get_text_for_grounding(stmt, agent_txt)
+
+    def apply_grounding(agent, agent_txt, ns_and_id):
+        db_ns, db_id = ns_and_id.split(':', maxsplit=1)
+        if db_ns == 'CHEBI' and not db_id.startswith('CHEBI:'):
+            db_id = 'CHEBI:%s' % db_id
+        agent.db_refs = {'TEXT': agent_txt, db_ns: db_id}
+        agent.name = standard_name
+        logger.info('Disambiguated %s to: %s, %s:%s' %
+                    (agent_txt, standard_name, db_ns, db_id))
+        standardize_agent_name(agent, standardize_refs=True)
+
+    def remove_grounding(agent, agent_txt):
+        agent.name = agent_txt
+        agent.db_refs = {'TEXT': agent_txt}
+
     if grounding_text:
-        res = adeft_disambiguators[agent_txt].disambiguate(
-            [grounding_text])
+        da = adeft_disambiguators[agent_txt]
+        res = da.disambiguate([grounding_text])
         ns_and_id, standard_name, disamb_scores = res[0]
         # If the highest score is ungrounded we explicitly remove grounding
         # and reset the (potentially incorrectly standardized) name to the
         # original text value.
         if ns_and_id == 'ungrounded':
-            agent.name = agent_txt
-            agent.db_refs = {'TEXT': agent_txt}
+            remove_grounding(agent, agent_txt)
         # Otherwise we update the db_refs with what we got from DEFT
         # and set the standard name
-        else:
-            db_ns, db_id = ns_and_id.split(':', maxsplit=1)
-            agent.db_refs = {'TEXT': agent_txt, db_ns: db_id}
-            agent.name = standard_name
-            logger.info('Disambiguated %s to: %s, %s:%s' %
-                        (agent_txt, standard_name, db_ns, db_id))
-            GroundingMapper.standardize_agent_name(agent,
-                                                   standardize_refs=True)
+        elif ns_and_id in da.pos_labels:
+            apply_grounding(agent, agent_txt, ns_and_id)
             annots['agents']['adeft'][idx] = disamb_scores
+        else:
+            if disamb_scores[ns_and_id] == 1 and ':' in ns_and_id:
+                apply_grounding(agent, agent_txt, ns_and_id)
+                annots['agents']['adeft'][idx] = disamb_scores
+            else:
+                remove_grounding(agent, agent_txt)
+
+        success = True
+    return success
 
 
 def _get_text_for_grounding(stmt, agent_text):
@@ -115,11 +141,13 @@ def _get_text_for_grounding(stmt, agent_text):
         logger.info('Obtaining text for disambiguation with refs: %s' %
                     refs)
         content = get_text_content_from_text_refs(refs)
+        if not content:
+            raise ValueError('Text obtained from DB is empty')
         text = universal_extract_text(content, contains=agent_text)
         if text:
             return text
     except Exception as e:
-        logger.info('Could not get text for disambiguation from DB.')
+        logger.info('Could not get text for disambiguation from DB: %s' % e)
     # If that doesn't work, we try PubMed next
     if text is None:
         from indra.literature import pubmed_client

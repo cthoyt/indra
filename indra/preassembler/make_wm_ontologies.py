@@ -22,6 +22,7 @@ indra_rel_ns = Namespace(indra_ns + 'relations/')
 isa = indra_rel_ns.term('isa')
 isequal = indra_rel_ns.term('is_equal')
 isopp = indra_rel_ns.term('is_opposite')
+has_polarity = indra_rel_ns.term('has_polarity')
 
 wm_ont_url = ('https://raw.githubusercontent.com/WorldModelers/'
               'Ontologies/master/wm_metadata.yml')
@@ -76,8 +77,18 @@ class HierarchyConverter(object):
                 if opp:
                     parts = opp.split('/')
                     opp_term = get_term(parts[-1], '/'.join(parts[:-1]))
-                    rel = (opp_term, isopp, child_term)
-                    self.G.add(rel)
+                    self.add_opposite(opp_term, child_term)
+                pol = entry.get('polarity')
+                if pol is not None:
+                    self.add_polarity(child_term, pol)
+
+    def add_opposite(self, term1, term2):
+        rel = (term1, isopp, term2)
+        self.G.add(rel)
+
+    def add_polarity(self, term, pol):
+        rel = (term, has_polarity, Literal(str(pol)))
+        self.G.add(rel)
 
     def add_equals(self):
         term_equivs = defaultdict(list)
@@ -139,4 +150,13 @@ if __name__ == '__main__':
     yml = load_yaml_from_url(args.url)
     hc = HierarchyConverter(yml, args.url == hume_ont_url)
     hc.convert_ontology()
+    # FIXME: these are temporary patches that should later be moved
+    # into the ontology itself
+    fi = get_term('wm/concept/causal_factor/food_insecurity', None)
+    fs = get_term('wm/concept/causal_factor/food_security', None)
+    hc.add_polarity(fi, -1)
+    hc.add_polarity(fs, 1)
+    hc.add_opposite(fi, fs)
+    hc.add_opposite(fs, fi)
+    ######################
     hc.save_hierarchy(args.fname)

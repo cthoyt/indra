@@ -1,5 +1,3 @@
-from __future__ import absolute_import, print_function, unicode_literals
-from builtins import dict, str
 import os
 import logging
 import operator
@@ -9,8 +7,7 @@ from copy import deepcopy
 import xml.etree.ElementTree as ET
 from indra.util import read_unicode_csv
 from indra.statements import *
-import indra.databases.hgnc_client as hgnc_client
-import indra.databases.uniprot_client as up_client
+from indra.databases import go_client, hgnc_client, uniprot_client
 from indra.util import UnicodeXMLTreeBuilder as UTB
 
 logger = logging.getLogger(__name__)
@@ -1128,23 +1125,23 @@ class TripsProcessor(object):
         db_refs_dict = dict([d.split(':') for d in dbids])
         upid = db_refs_dict.get('UP')
         goid = db_refs_dict.get('GO')
-        if goid and not goid.startswith('GO:'):
-            goid = 'GO:%s' % goid
+        if goid:
+            if not goid.startswith('GO:'):
+                goid = 'GO:%s' % goid
         if not goid and upid is not None and upid.startswith('SL'):
-            goid = up_client.uniprot_subcell_loc.get(upid)
+            goid = uniprot_client.uniprot_subcell_loc.get(upid)
         if goid is not None:
-            try:
-                loc_name = get_valid_location(goid)
+            prim_id = go_client.get_primary_id(goid)
+            if prim_id:
+                goid = prim_id
+            loc_name = go_client.get_go_label(goid)
+            if loc_name:
                 return loc_name
-            except InvalidLocationError:
-                pass
         # Check if the raw name is a valid cellular component
         if name is not None:
-            try:
-                loc_name = get_valid_location(name.lower())
+            loc_name = go_client.get_go_id_from_label_or_synonym(name.lower())
+            if loc_name:
                 return loc_name
-            except InvalidLocationError:
-                pass
         msg = 'Location %s is not a valid GO cellular component' % name
         logger.debug(msg)
         return None
@@ -1252,7 +1249,7 @@ class TripsProcessor(object):
             elif up_id:
                 # Handle some known special cases:
                 if not (up_id == 'etc' or up_id.startswith('SL-')):
-                    gene_name = up_client.get_gene_name(up_id)
+                    gene_name = uniprot_client.get_gene_name(up_id)
                     if gene_name:
                         agent_name = gene_name
             # If it is mapped to FamPlex then we standardize its name
@@ -1263,8 +1260,8 @@ class TripsProcessor(object):
             # agent name
             if agent_name is None:
                 name = term.find("name")
-                if name is not None:
-                    agent_name = name.text
+                if name is not None and name.text is not None:
+                    agent_name = sanitize_trips_name(name.text)
             # If after all of this, the agent name is still None
             # then we don't extract this term as an agent
             if agent_name is None:
@@ -1815,7 +1812,7 @@ def _get_db_refs(term):
                 except KeyError:
                     pass
                 if ref_ns == 'UP':
-                    if not up_client.is_human(ref_id):
+                    if not uniprot_client.is_human(ref_id):
                         priority = 4
             entry['priority'] = priority
         if len(entries) > 1:
@@ -2065,7 +2062,7 @@ def _get_db_mappings(dbname, dbid):
         if target is not None:
             db_mappings.append((target[0], target[1]))
             if target[0] == 'UP':
-                hgnc_id = up_client.get_hgnc_id(target[1])
+                hgnc_id = uniprot_client.get_hgnc_id(target[1])
                 if hgnc_id:
                     db_mappings.append(('HGNC', hgnc_id))
             elif target[0] == 'HGNC':
@@ -2082,15 +2079,20 @@ def _get_db_mappings(dbname, dbid):
         # Handle special case of UP:etc
         if not dbid == 'etc':
             if dbid.startswith('SL-'):
-                goid = up_client.uniprot_subcell_loc.get(dbid)
+                goid = uniprot_client.uniprot_subcell_loc.get(dbid)
                 if goid:
                     db_mappings.append(('GO', goid))
-            hgnc_id = up_client.get_hgnc_id(dbid)
+            hgnc_id = uniprot_client.get_hgnc_id(dbid)
             if hgnc_id:
                 db_mappings.append(('HGNC', hgnc_id))
 
     # TODO: we could do some chemical mappings here i.e. CHEBI/PUBCHEM/CHEMBL
     return db_mappings
+
+
+def sanitize_trips_name(name):
+    name = name.replace('-PUNC-MINUS-', '-')
+    return name
 
 
 def _read_ncit_map():

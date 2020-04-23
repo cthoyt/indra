@@ -4,6 +4,7 @@ import json
 import base64
 import logging
 from bottle import route, run, request, default_app, response, static_file
+from indra import get_config
 from indra.sources import trips, reach, bel, biopax
 from indra.sources import eidos, hume, cwms, sofia
 from indra.databases import hgnc_client
@@ -19,7 +20,7 @@ import indra.tools.assemble_corpus as ac
 from indra.databases import cbio_client
 from indra.sources.indra_db_rest import get_statements
 from indra.sources.ndex_cx.api import process_ndex_network
-
+from indra.sources.reach.api import reach_nxml_url, reach_text_url
 from indra.belief.wm_scorer import get_eidos_scorer
 from indra.preassembler.ontology_mapper import OntologyMapper, wm_ontomap
 
@@ -109,7 +110,23 @@ def reach_process_text():
     body = json.loads(response)
     text = body.get('text')
     offline = True if body.get('offline') else False
-    rp = reach.process_text(text, offline=offline)
+    given_url = body.get('url')
+    config_url = get_config('REACH_TEXT_URL', failure_ok=True)
+    # Order: URL given as an explicit argument in the request. Then any URL
+    # set in the configuration. Then, unless offline is set, use the default
+    # REACH web service URL.
+    if 'url' in body:  # This is to take None if explicitly given
+        url = given_url
+    elif config_url:
+        url = config_url
+    elif not offline:
+        url = reach_text_url
+    else:
+        url = None
+    # If a URL is set, prioritize it over the offline setting
+    if url:
+        offline = False
+    rp = reach.process_text(text, offline=offline, url=url)
     return _stmts_from_proc(rp)
 
 
@@ -135,7 +152,24 @@ def reach_process_pmc():
     response = request.body.read().decode('utf-8')
     body = json.loads(response)
     pmcid = body.get('pmcid')
-    rp = reach.process_pmc(pmcid)
+    offline = True if body.get('offline') else False
+    given_url = body.get('url')
+    config_url = get_config('REACH_NXML_URL', failure_ok=True)
+    # Order: URL given as an explicit argument in the request. Then any URL
+    # set in the configuration. Then, unless offline is set, use the default
+    # REACH web service URL.
+    if 'url' in body:  # This is to take None if explicitly given
+        url = given_url
+    elif config_url:
+        url = config_url
+    elif not offline:
+        url = reach_nxml_url
+    else:
+        url = None
+    # If a URL is set, prioritize it over the offline setting
+    if url:
+        offline = False
+    rp = reach.process_pmc(pmcid, offline=offline, url=url)
     return _stmts_from_proc(rp)
 
 ##################

@@ -2,7 +2,7 @@ from indra.preassembler.grounding_mapper import default_mapper as gm
 from indra.preassembler.grounding_mapper import GroundingMapper
 from indra.preassembler.grounding_mapper.analysis import *
 from indra.preassembler.grounding_mapper.gilda import ground_statements, \
-    get_gilda_models
+    get_gilda_models, ground_statement
 from indra.preassembler.grounding_mapper.standardize import \
     standardize_agent_name, standardize_db_refs
 from indra.statements import Agent, Phosphorylation, Complex, Inhibition, \
@@ -399,15 +399,21 @@ def test_standardize_db_refs_efo_hp_doid():
     refs = standardize_db_refs({'MESH': 'D064706'})
     assert refs.get('HP') == 'HP:0031801', refs
 
-    # There would be a one-to-many mapping from this DOID
-    # so we make sure we don't add a mapping for it.
-    refs = standardize_db_refs({'DOID': 'DOID:0060695'})
-    assert 'MESH' not in refs
+    # Currently there is no one-to-many mapping in the direction towards MeSH
+    # (there used to be) if there is again, we should test it here
+    #refs = standardize_db_refs({'DOID': 'DOID:0060695'})
+    #assert 'MESH' not in refs
+
+    # One-to-many mappings away from MESH
     refs = standardize_db_refs({'MESH': 'D000071017'})
-    assert refs.get('DOID') == 'DOID:0060695'
+    assert 'DOID' not in refs
 
     refs = standardize_db_refs({'DOID': 'DOID:0060495'})
     assert refs.get('MESH') == 'D000067208'
+
+    # This is an xrefs-based mapping that isn't in Gilda's resource file
+    refs = standardize_db_refs({'EFO': '0000694'})
+    assert refs.get('MESH') == 'D045169'
 
 
 def test_standardize_name_efo_hp_doid():
@@ -423,13 +429,18 @@ def test_standardize_name_efo_hp_doid():
 
     ag = Agent('x', db_refs={'DOID': 'DOID:0014667'})
     standardize_agent_name(ag)
-    # Name based on HP itself
-    assert ag.name == 'disease of metabolism'
+    # Name based on MESH mapping
+    assert ag.name == 'Metabolic Diseases'
 
     ag = Agent('x', db_refs={'EFO': '1002050'})
     standardize_agent_name(ag)
-    # Name based on HP itself
-    assert ag.name == 'nephritis'
+    # Name based on MESH mapping
+    assert ag.name == 'Nephritis', (ag.name, ag.db_refs)
+
+    ag = Agent('x', db_refs={'EFO': '0000001'})
+    standardize_agent_name(ag)
+    # Name based on EFO itself
+    assert ag.name == 'experimental factor', (ag.name, ag.db_refs)
 
 
 def test_standardize_uppro():
@@ -514,6 +525,36 @@ def test_ground_gilda():
         assert stmt.sub.db_refs['UP'] == 'P27361'
 
 
+def test_ground_gilda_source():
+    ev1 = Evidence(source_api='reach')
+    ev2 = Evidence(source_api='sparser')
+    ev3 = Evidence(source_api='trips')
+    stmts = [Phosphorylation(None, Agent('x', db_refs={'TEXT': 'kras'}),
+                             evidence=ev)
+             for ev in (ev1, ev2, ev3)]
+    ground_statements(stmts, sources=['trips'])
+    assert stmts[0].sub.name == 'x', stmts[0]
+    assert stmts[1].sub.name == 'x'
+    assert stmts[2].sub.name == 'KRAS'
+    ground_statements(stmts, sources=['reach', 'sparser'])
+    assert all(stmt.sub.name == 'KRAS' for stmt in stmts)
+
+
+def test_gilda_ground_ungrounded():
+    ag1 = Agent('x', db_refs={'TEXT': 'RAS', 'FPLX': 'RAS'})
+    ag2 = Agent('x', db_refs={'TEXT': 'RAS'})
+    ag3 = Agent('x', db_refs={'TEXT': 'RAS', 'XXXXX': 'XXXX'})
+    stmts = [Phosphorylation(None, ag) for ag in (ag1, ag2, ag3)]
+    ground_statement(stmts[0], ungrounded_only=True)
+    assert ag1.name == 'x'
+    ground_statement(stmts[0], ungrounded_only=False)
+    assert ag1.name == 'RAS', ag1
+    ground_statement(stmts[1], ungrounded_only=True)
+    assert ag2.name == 'RAS'
+    ground_statements([stmts[2]], ungrounded_only=True)
+    assert ag3.name == 'RAS'
+
+
 def test_get_gilda_models():
     models = get_gilda_models()
     assert 'NDR1' in models
@@ -554,6 +595,24 @@ def test_gilda_disambiguation():
         annotations
     assert annotations['agents']['gilda'][0] is None
     assert annotations['agents']['gilda'][1] is not None
+
+
+@attr('nonpublic')
+def test_gilda_disambiguation_local():
+    gm.gilda_mode = 'local'
+    er1 = Agent('NDR1', db_refs={'TEXT': 'NDR1'})
+    pmid1 = '18362890'
+    stmt1 = Phosphorylation(None, er1,
+                            evidence=[Evidence(pmid=pmid1,
+                                               text_refs={'PMID': pmid1})])
+    mapped_stmts1 = gm.map_stmts([stmt1])
+    annotations = mapped_stmts1[0].evidence[0].annotations
+    assert annotations['agents']['gilda'][0] is None
+    assert annotations['agents']['gilda'][1] is not None
+    assert len(annotations['agents']['gilda'][1]) == 2, \
+        annotations
+    # This is to make sure the to_json of the ScoredMatches works
+    assert annotations['agents']['gilda'][1][0]['term']['db'] == 'HGNC'
 
 
 def test_uppro_fallback():

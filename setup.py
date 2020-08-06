@@ -9,17 +9,18 @@ with open(readme_path, 'r', encoding='utf-8') as fh:
 
 
 def main():
-    install_list = ['pysb>=1.3.0,<=1.9.1', 'objectpath', 'rdflib',
+    install_list = ['pysb>=1.3.0,<=1.9.1', 'objectpath', 'rdflib==4.2.2',
                     'requests>=2.11', 'lxml', 'ipython', 'future',
                     'networkx>=2', 'pandas', 'ndex2==2.0.1', 'jinja2',
-                    'protmapper>=0.0.16', 'obonet']
+                    'protmapper>=0.0.16', 'obonet', 'sympy==1.3',
+                    'tqdm', 'pybiopax>=0.0.4']
 
     extras_require = {
                       # Inputs and outputs
-                      'biopax': ['cython', 'pyjnius==1.1.4'],
                       'trips_offline': ['pykqml'],
                       'reach_offline': ['cython', 'pyjnius==1.1.4'],
-                      'eidos_offline': ['pyyaml>=5.1.0', 'cython', 'pyjnius==1.1.4'],
+                      'eidos_offline': ['pyyaml>=5.1.0', 'cython',
+                                        'pyjnius==1.1.4'],
                       'hypothesis': ['gilda'],
                       'geneways': ['stemming', 'nltk'],
                       'sofia': ['openpyxl'],
@@ -36,13 +37,14 @@ def main():
                       'graph': ['pygraphviz'],
                       'plot': ['matplotlib'],
                       'isi': ['nltk', 'unidecode'],
-                      'api': ['flask']
+                      'api': ['flask', 'flask_restx', 'flask_cors',
+                              'docstring-parser']
                       }
     extras_require['all'] = list({dep for deps in extras_require.values()
                                   for dep in deps})
 
     setup(name='indra',
-          version='1.16.0',
+          version='1.17.0',
           description='Integrated Network and Dynamical Reasoning Assembler',
           long_description=long_description,
           long_description_content_type='text/markdown',
@@ -61,11 +63,16 @@ def main():
                     'indra.belief',
                     'indra.benchmarks', 'indra.databases',
                     'indra.explanation', 'indra.explanation.model_checker',
+                    'indra.explanation.pathfinding',
                     'indra.literature', 'indra.mechlinker',
+                    'indra.ontology', 'indra.ontology.bio',
+                    'indra.ontology.world', 'indra.ontology.virtual',
+                    'indra.ontology.app', 'indra.pipeline',
                     'indra.preassembler',
                     'indra.preassembler.grounding_mapper', 'indra.sources',
                     'indra.sources.bel',
-                    'indra.sources.biopax', 'indra.sources.cwms',
+                    'indra.sources.biopax', 'indra.sources.ctd',
+                    'indra.sources.cwms', 'indra.sources.drugbank',
                     'indra.sources.eidos',
                     'indra.sources.geneways', 'indra.sources.hprd',
                     'indra.sources.hume', 'indra.sources.hypothesis',
@@ -81,7 +88,7 @@ def main():
                     'indra.sources.virhostnet',
                     'indra.resources', 'indra.statements',
                     'indra.tests', 'indra.tests.test_obo_clients',
-                    'indra.tools', 'indra.tools.live_curation',
+                    'indra.tools',
                     'indra.tools.machine', 'indra.util'],
           install_requires=install_list,
           extras_require=extras_require,
@@ -93,7 +100,9 @@ def main():
             'Environment :: Console',
             'Intended Audience :: Science/Research',
             'License :: OSI Approved :: BSD License',
-            'Programming Language :: Python :: 3',
+            'Programming Language :: Python :: 3.6',
+            'Programming Language :: Python :: 3.7',
+            'Programming Language :: Python :: 3.8',
             'Topic :: Scientific/Engineering :: Bio-Informatics',
             'Topic :: Scientific/Engineering :: Chemistry',
             'Topic :: Scientific/Engineering :: Mathematics',

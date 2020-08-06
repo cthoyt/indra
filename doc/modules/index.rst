@@ -10,10 +10,12 @@ INDRA modules reference
    sources/index
    databases/index
    literature/index
+   ontology/index
    preassembler/index
    belief/index
    mechlinker/index
    assemblers/index
    explanation/index
+   pipeline
    tools/index
    util/index

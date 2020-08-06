@@ -3,9 +3,10 @@ and contains functions to help apply it during the course of INDRA assembly."""
 import logging
 import requests
 from urllib.parse import urljoin
-from indra.preassembler.grounding_mapper.standardize \
+from indra.ontology.standardize \
     import standardize_agent_name
 from indra.config import get_config, has_config
+from indra.pipeline import register_pipeline
 from .adeft import _get_text_for_grounding
 
 logger = logging.getLogger(__name__)
@@ -133,6 +134,7 @@ def ground_statement(stmt, mode='web', ungrounded_only=False):
                 ground_agent(agent, txt, context, mode=mode)
 
 
+@register_pipeline
 def ground_statements(stmts, mode='web', sources=None, ungrounded_only=False):
     """Set grounding for Agents in a list of Statements using Gilda.
 
@@ -224,8 +226,8 @@ def run_gilda_disambiguation(stmt, agent, idx, mode='web'):
     if grounding_text:
         gilda_result = ground_agent(agent, agent_txt, grounding_text, mode)
         if gilda_result:
-            logger.info('Disambiguated %s to: %s' %
-                        (agent_txt, agent.name))
+            logger.debug('Disambiguated %s to: %s' %
+                         (agent_txt, agent.name))
             annots['agents']['gilda'][idx] = gilda_result
             success = True
     return success

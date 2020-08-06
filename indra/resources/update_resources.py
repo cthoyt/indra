@@ -1,9 +1,7 @@
 import os
 import json
 import gzip
-import pickle
 import pandas
-import rdflib
 import logging
 import requests
 from zipfile import ZipFile
@@ -14,15 +12,6 @@ from indra.util import read_unicode_csv, write_unicode_csv
 from indra.databases.obo_client import OboClient
 from indra.databases import chebi_client, pubchem_client
 from indra.databases.lincs_client import load_lincs_csv
-from indra.preassembler.make_entity_hierarchy import \
-    main as make_ent_hierarchy
-from indra.preassembler.make_activity_hierarchy import \
-    main as make_act_hierarchy
-from indra.preassembler.make_modification_hierarchy import \
-    main as make_mod_hierarchy
-from indra.preassembler.make_cellular_component_hierarchy import \
-    main as make_cellular_component_hierarchy
-from indra.preassembler.hierarchy_manager import get_bio_hierarchies
 
 path = os.path.dirname(__file__)
 logging.basicConfig(format='%(levelname)s: indra/%(name)s - %(message)s',
@@ -213,7 +202,15 @@ def update_chebi_references():
     # Save ChEMBL mapping
     fname = os.path.join(path, 'chebi_to_chembl.tsv')
     logger.info('Saving into %s' % fname)
-    df_chembl = df[df['REFERENCE_DB_NAME']=='ChEMBL']
+    df_chembl = df[df['REFERENCE_DB_NAME'] == 'ChEMBL']
+    # Get additional mappings for compounds in tas
+    df_chembl_tas = pandas.read_csv(os.path.join(path, 'chembl_tas.csv'),
+                                    sep=',')[['chebi_id', 'chembl_id']]
+    df_chembl_tas = df_chembl_tas[~df_chembl_tas.chebi_id.isna()]
+    df_chembl_tas['chebi_id'] = df_chembl_tas.chebi_id.\
+        apply(lambda x: str(int(x)))
+    df_chembl_tas.columns = ['COMPOUND_ID', 'REFERENCE_ID']
+    df_chembl = pandas.concat([df_chembl, df_chembl_tas]).drop_duplicates()
     df_chembl.sort_values(['COMPOUND_ID', 'REFERENCE_ID'], ascending=True,
                           inplace=True)
     df_chembl.to_csv(fname, sep='\t', columns=['COMPOUND_ID', 'REFERENCE_ID'],
@@ -279,8 +276,8 @@ def update_chebi_accessions():
     df_cas.sort_values(['ACCESSION_NUMBER', 'COMPOUND_ID'], ascending=True,
                        inplace=True)
     # Here we need to map to primary ChEBI IDs
-    from indra.databases.chebi_client import chebi_to_primary
-    df_cas.COMPOUND_ID.replace(chebi_to_primary, inplace=True)
+    from indra.databases.chebi_client import get_primary_id
+    df_cas.COMPOUND_ID.replace(get_primary_id, inplace=True)
     df_cas.drop_duplicates(subset=['ACCESSION_NUMBER', 'COMPOUND_ID'],
                            inplace=True)
     df_cas.to_csv(fname, sep='\t',
@@ -352,98 +349,6 @@ def update_bel_chebi_map():
                                            key=lambda x: x[0]):
             fh.write(('%s\tCHEBI:%s\n' %
                       (chebi_name, chebi_id)).encode('utf-8'))
-
-
-def _get_chebi_obo_terms():
-    def process_term(term):
-        lines = term.split('\n')[1:]
-        term_id = None
-        parents = []
-        secondaries = []
-        name = None
-        for line in lines:
-            k, v = line.split(': ', maxsplit=1)
-            if k == 'id':
-                term_id = v
-            elif k == 'is_a':
-                parents.append(v)
-            elif k == 'relationship':
-                rel, target = v.split(' ')
-                if rel in ('is_conjugate_acid_of', 'has_functional_parent',
-                           'has_parent_hydride', 'has_role'):
-                    parents.append(target)
-            elif k == 'alt_id':
-                secondaries.append(v)
-            elif k == 'name':
-                name = v
-        return term_id, name, secondaries, parents
-    url = 'ftp://ftp.ebi.ac.uk/pub/databases/chebi/ontology/chebi_lite.obo'
-    fname = 'chebi_lite.obo'
-    logger.info('Downloading %s' % url)
-    urlretrieve(url, fname)
-    with open(fname, 'r') as fh:
-        logger.info('Loading %s' % fname)
-        content = fh.read()
-    chunks = content.split('\n\n')
-    terms = [c for c in chunks if c.startswith('[Term]')]
-    logger.info('Found %d terms' % len(terms))
-    term_entries = [process_term(term) for term in terms]
-    return term_entries
-
-
-def update_chebi_entries():
-    term_entries = _get_chebi_obo_terms()
-    # Make the name and secondary table
-    fname = os.path.join(path, 'chebi_entries.tsv')
-    rows = [['CHEBI_ID', 'NAME', 'SECONDARIES']]
-    for term_id, name, secondaries, parents in term_entries:
-        term_id = term_id.replace('CHEBI:', '')
-        rows.append([term_id, name, ','.join(secondaries)])
-    with open(fname, 'wb') as fh:
-        write_unicode_csv(fname, rows, '\t')
-
-
-def make_chebi_hierarchy():
-    term_entries = _get_chebi_obo_terms()
-    terms_with_parents = [(t, p) for t, _, _, p in term_entries if p]
-    g = rdflib.Graph()
-    indra_rn = \
-        rdflib.Namespace('http://sorger.med.harvard.edu/indra/relations/')
-    chebi_ns = rdflib.Namespace('http://identifiers.org/chebi/')
-    isa = indra_rn.term('isa')
-    for child, parents in terms_with_parents:
-        for parent in parents:
-            g.add((chebi_ns.term(child), isa, chebi_ns.term(parent)))
-    return g
-
-
-def update_entity_hierarchy():
-    logger.info('--Updating entity hierarchy----')
-    fname = os.path.join(path, 'famplex/relations.csv')
-    g = make_ent_hierarchy(fname)
-    g_chebi = make_chebi_hierarchy()
-    g += g_chebi
-    gb = g.serialize(format='nt')
-    gb = gb.replace(b'\n\n', b'\n').strip()
-    rows = b'\n'.join(sorted(gb.split(b'\n')))
-    fname = os.path.join(path, 'entity_hierarchy.rdf')
-    with open(fname, 'wb') as fh:
-        fh.write(rows)
-
-
-def update_modification_hierarchy():
-    logger.info('--Updating modification hierarchy----')
-    make_mod_hierarchy()
-
-
-def update_activity_hierarchy():
-    logger.info('--Updating activity hierarchy----')
-    make_act_hierarchy()
-
-
-def update_cellular_component_hierarchy():
-    logger.info('--Updating cellular component hierarchy----')
-    make_cellular_component_hierarchy()
 
 
 def update_famplex_map():
@@ -532,14 +437,21 @@ def update_famplex():
                  'grounding_map', 'relations']
     for csv_name in csv_names:
         url = famplex_url_pattern % csv_name
-        save_from_http(url, os.path.join(path,'famplex/%s.csv' % csv_name))
+        save_from_http(url, os.path.join(path, 'famplex',
+                                         '%s.csv' % csv_name))
 
 
-def update_hierarchy_pickle():
-    fname = os.path.join(path, 'bio_hierarchies.pkl')
-    hierarchies = get_bio_hierarchies(from_pickle=False)
-    with open(fname, 'wb') as fh:
-        pickle.dump(hierarchies, fh, protocol=4)
+def update_grounding_map():
+    famplex_gmap = os.path.join(path, 'famplex', 'grounding_map.csv')
+    covid_gmap = os.path.join(path, 'grounding', 'covid_grounding.csv')
+    famplex_rows = list(read_unicode_csv(famplex_gmap))
+    row_len = len(famplex_rows[0])
+    covid_rows = list(read_unicode_csv(covid_gmap))
+    covid_rows = [r + [''] * (row_len - len(r))
+                  for r in covid_rows]
+    all_rows = famplex_rows + covid_rows
+    grounding_map = os.path.join(path, 'grounding', 'grounding_map.csv')
+    write_unicode_csv(grounding_map, all_rows)
 
 
 def update_lincs_small_molecules():
@@ -576,8 +488,9 @@ def update_lincs_proteins():
 
 def update_mesh_names():
     """Update Mesh ID to name and tree number mappings."""
-    url = 'ftp://nlmpubs.nlm.nih.gov/online/mesh/2019/xmlmesh/desc2019.gz'
-    desc_path = os.path.join(path, 'mesh_desc2019.gz')
+    url = ('ftp://nlmpubs.nlm.nih.gov/online/mesh/MESH_FILES/'
+           'xmlmesh/desc2020.gz')
+    desc_path = os.path.join(path, 'mesh_desc2020.gz')
     if not os.path.exists(desc_path):
         logging.info('Download MeSH descriptors from %s', url)
         urlretrieve(url, desc_path)
@@ -602,8 +515,9 @@ def update_mesh_names():
 
 def update_mesh_supplementary_names():
     """Update MeSH ID to name mappings for supplementary terms."""
-    supp_url = 'ftp://nlmpubs.nlm.nih.gov/online/mesh/2019/xmlmesh/supp2019.gz'
-    supp_path = os.path.join(path, 'mesh_supp2019.gz')
+    supp_url = ('ftp://nlmpubs.nlm.nih.gov/online/mesh/MESH_FILES/'
+                'xmlmesh/supp2020.gz')
+    supp_path = os.path.join(path, 'mesh_supp2020.gz')
     if not os.path.exists(supp_path):
         logging.info('Download MeSH supplement from %s', supp_url)
         urlretrieve(supp_url, supp_path)
@@ -738,22 +652,51 @@ def update_go():
     OboClient.update_resource(path, url, 'go', remove_prefix=False)
 
 
+def update_chebi_obo():
+    """Update disease ontology."""
+    url = 'ftp://ftp.ebi.ac.uk/pub/databases/chebi/ontology/chebi_lite.obo'
+    OboClient.update_resource(path, url, 'chebi', remove_prefix=False)
+
+
+def update_drugbank_mappings():
+    """Update mappings from DrugBank to CHEBI/CHEMBL"""
+    # Note that for this to work, PyOBO (https://github.com/pyobo/pyobo) has
+    # to be installed and the DrugBank download
+    # (https://www.drugbank.ca/releases/latest) put into ~/.obo/drugbank/
+    # Note that the DrugBank download requires signing up for an account and
+    # waiting for approval.
+    import pyobo
+    drugbank_chembl = pyobo.get_filtered_xrefs('drugbank', 'chembl.compound')
+    drugbank_chebi = pyobo.get_filtered_xrefs('drugbank', 'chebi')
+    chebi_drugbank = pyobo.get_filtered_xrefs('chebi', 'drugbank')
+    drugbank_names = pyobo.get_id_name_mapping('drugbank')
+    rows = []
+    for drugbank_id, chembl_id in drugbank_chembl.items():
+        rows.append([drugbank_id, 'CHEMBL', chembl_id, 'drugbank'])
+    for drugbank_id, chebi_id in drugbank_chebi.items():
+        rows.append([drugbank_id, 'CHEBI', chebi_id, 'drugbank'])
+    for chebi_id, drugbank_id in chebi_drugbank.items():
+        rows.append([drugbank_id, 'CHEBI', chebi_id, 'chebi'])
+    for drugbank_id, name in drugbank_names.items():
+        rows.append([drugbank_id, 'NAME', name, 'drugbank'])
+    fname = os.path.join(path, 'drugbank_mappings.tsv')
+    header = ['DRUGBANK_ID', 'NAMESPACE', 'ID', 'SOURCE']
+    rows = [header] + sorted(rows)
+    write_unicode_csv(fname, rows, delimiter='\t')
+
+
 def main():
     update_famplex()
     update_famplex_map()
+    update_grounding_map()
     update_hgnc_entries()
     update_kinases()
     update_uniprot_subcell_loc()
-    update_chebi_entries()
+    update_chebi_obo()
     update_chebi_references()
     update_chebi_accessions()
     update_hmdb_chebi_map()
     update_bel_chebi_map()
-    update_entity_hierarchy()
-    update_modification_hierarchy()
-    update_activity_hierarchy()
-    update_cellular_component_hierarchy()
-    update_hierarchy_pickle()
     update_ncit_map()
     update_lincs_small_molecules()
     update_lincs_proteins()
@@ -763,6 +706,7 @@ def main():
     update_doid()
     update_efo()
     update_hpo()
+    update_drugbank_mappings()
 
 
 if __name__ == '__main__':

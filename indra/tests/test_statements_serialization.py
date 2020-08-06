@@ -266,6 +266,28 @@ def test_belief():
     assert jd2['belief'] == 0.5
 
 
+def test_hash():
+    # Check that the original matches hash is preserved to and from JSON
+    stmt = Phosphorylation(Agent('a'), Agent('b'), 'S', evidence=[ev])
+    sh = stmt.get_hash()
+    jd = stmt.to_json()
+    stmt_ret = Statement._from_json(jd)
+    assert stmt_ret._shallow_hash == sh
+
+    # Check that the JSON matches hash is set but when refreshed, is replaced
+    jd['matches_hash'] = '1234'
+    stmt_ret = Statement._from_json(jd)
+    assert stmt_ret._shallow_hash == 1234, stmt_ret._shallow_hash
+    assert stmt_ret.get_hash() == 1234
+    assert stmt_ret.get_hash(refresh=True) == sh
+
+    # Check handling of invalid matches hash in JSON
+    jd['matches_hash'] = 'abcde'
+    stmt_ret = Statement._from_json(jd)
+    assert stmt_ret._shallow_hash is None
+    assert stmt_ret.get_hash() == sh
+
+
 def test_time_context():
     tc = TimeContext(text='2018',
                      start=datetime.datetime(2018, 1, 1, 0, 0),
@@ -354,4 +376,11 @@ def test_file_serialization():
     stmt = IncreaseAmount(Agent('a'), Agent('b'), evidence=[ev])
     stmts_to_json_file([stmt], 'test_indra_stmts.json')
     stmts = stmts_from_json_file('test_indra_stmts.json')
+    assert stmts[0].matches(stmt)
+
+
+def test_file_serialization_json_lines():
+    stmt = IncreaseAmount(Agent('a'), Agent('b'), evidence=[ev])
+    stmts_to_json_file([stmt], 'test_indra_stmts.json', format='jsonl')
+    stmts = stmts_from_json_file('test_indra_stmts.json', format='jsonl')
     assert stmts[0].matches(stmt)

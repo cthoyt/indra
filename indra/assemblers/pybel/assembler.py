@@ -8,7 +8,10 @@ import pybel
 import pybel.constants as pc
 from pybel.dsl import *
 from pybel.language import pmod_namespace
-from pybel.utils import citation_dict
+try:  # this works after pybel pull request #453
+    from pybel.language import citation_dict
+except ImportError: # this works before pybel pull request #453
+    from pybel.utils import citation_dict
 from indra.statements import *
 from indra.databases import hgnc_client
 
@@ -372,39 +375,42 @@ class PybelAssembler(object):
         self._add_nodes_edges(stmt.enz, sub_agent, pc.DIRECTLY_INCREASES, stmt)
 
     def _assemble_translocation(self, stmt):
-        #cc = hierarchies['cellular_component']
-        #nuc_uri = cc.find_entity('nucleus')
-        #cyto_uri = cc.find_entity('cytoplasm')
-        #cyto_go = cyto_uri.rsplit('/')[-1]
         pass
 
 
 def belgraph_to_signed_graph(
         belgraph, include_variants=True, symmetric_variant_links=False,
-        include_components=True, symmetric_component_links=False):
+        include_components=True, symmetric_component_links=False,
+        propagate_annotations=False):
     edge_set = set()
     for u, v, edge_data in belgraph.edges(data=True):
         rel = edge_data.get('relation')
+        pos_edge = \
+            (u, v, ('sign', 0)) + \
+            tuple((k, v)
+                  for k, v in edge_data.get('annotations', {}).items()) \
+            if propagate_annotations else (u, v, ('sign', 0))
+        # Unpack tuple pairs at indices >1 or they'll be in nested tuples
+        rev_pos_edge = (pos_edge[1], pos_edge[0], *pos_edge[2:])
         if rel in pc.CAUSAL_INCREASE_RELATIONS:
-            edge_set.add((u, v, 0))
+            edge_set.add(pos_edge)
         elif rel in pc.HAS_VARIANT and include_variants:
-            edge_set.add((u, v, 0))
+            edge_set.add(pos_edge)
             if symmetric_variant_links:
-                edge_set.add((v, u, 0))
+                edge_set.add(rev_pos_edge)
         elif rel in pc.PART_OF and include_components:
-            edge_set.add((u, v, 0))
+            edge_set.add(pos_edge)
             if symmetric_component_links:
-                edge_set.add((v, u, 0))
+                edge_set.add(rev_pos_edge)
         elif rel in pc.CAUSAL_DECREASE_RELATIONS:
-            edge_set.add((u, v, 1))
+            # Unpack tuples
+            edge_set.add((pos_edge[0], pos_edge[1],
+                          ('sign', 1), *pos_edge[3:]))
         else:
             continue
-    # Turn the tuples into dicts
+
     graph = nx.MultiDiGraph()
-    graph.add_edges_from(
-        (u, v, dict(sign=sign))
-        for u, v, sign in edge_set
-    )
+    graph.add_edges_from((t[0], t[1], dict(t[2:])) for t in edge_set)
     return graph
 
 
@@ -440,7 +446,8 @@ def _update_edge_data_from_evidence(evidence, edge_data):
 def _get_annotations_from_stmt(stmt):
     return {
         'stmt_hash': stmt.get_hash(refresh=True),
-        'uuid': stmt.uuid
+        'uuid': stmt.uuid,
+        'belief': stmt.belief
     }
 
 

@@ -11,7 +11,8 @@ from indra.databases import hgnc_client
 from indra.util import read_unicode_csv
 from indra.preassembler.grounding_mapper.gilda import get_gilda_models, \
     run_gilda_disambiguation
-from .standardize import standardize_db_refs, standardize_agent_name
+from indra.ontology.standardize import standardize_db_refs, \
+    standardize_agent_name
 from .adeft import adeft_disambiguators, run_adeft_disambiguation
 
 logger = logging.getLogger(__name__)
@@ -454,7 +455,7 @@ def _get_resource_path(*suffixes):
 
 def _load_default_grounding_map():
     default_grounding_map_path = \
-        _get_resource_path('famplex', 'grounding_map.csv')
+        _get_resource_path('grounding', 'grounding_map.csv')
     gmap = load_grounding_map(default_grounding_map_path, hgnc_symbols=True)
     return gmap
 

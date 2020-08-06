@@ -1,6 +1,10 @@
-[![Build Status](https://travis-ci.org/sorgerlab/indra.svg?branch=travis_ci)](https://travis-ci.org/sorgerlab/indra) [![Documentation Status](https://readthedocs.org/projects/indra/badge/?version=latest)](https://indra.readthedocs.io/en/latest/?badge=latest)
-
 # INDRA
+
+[![License](https://img.shields.io/badge/License-BSD%202--Clause-orange.svg)](https://opensource.org/licenses/BSD-2-Clause)
+[![Build](https://travis-ci.com/sorgerlab/indra.svg)](https://travis-ci.com/sorgerlab/indra)
+[![Documentation](https://readthedocs.org/projects/indra/badge/?version=latest)](https://indra.readthedocs.io/en/latest/?badge=latest)
+[![PyPI version](https://badge.fury.io/py/indra.svg)](https://badge.fury.io/py/indra)
+[![Python 3](https://img.shields.io/pypi/pyversions/indra.svg)](https://www.python.org/downloads/release/python-357/)
 
 <img align="left" src="https://raw.githubusercontent.com/sorgerlab/indra/master/doc/indra_logo.png" width="300" height="224" />
 
@@ -79,6 +83,9 @@ Biological pathway databases:
 | TRRUST                     | [`indra.sources.trrust`](https://indra.readthedocs.io/en/latest/modules/sources/trrust.html) | https://www.grnpedia.org/trrust/          |                   |
 | Phospho.ELM                | [`indra.sources.phosphoelm`](https://indra.readthedocs.io/en/latest/modules/sources/phosphoelm/index.html) | http://phospho.elm.eu.org/ |
 | VirHostNet                | [`indra.sources.virhostnet`](https://indra.readthedocs.io/en/latest/modules/sources/virhostnet/index.html) | http://virhostnet.prabi.fr/ |
+| CTD                  | [`indra.sources.ctd`](https://indra.readthedocs.io/en/latest/modules/sources/ctd/index.html) | http://ctdbase.org |
+| DrugBank                  | [`indra.sources.drugbank`](https://indra.readthedocs.io/en/latest/modules/sources/drugbank/index.html) | https://www.drugbank.ca/ |
+
 
 Custom knowledge bases:
 
@@ -196,7 +203,7 @@ stmts = ac.filter_belief(stmts, 0.8)    # Apply belief cutoff of 0.8
 
 An example of an assembly pipeline for statements in the world modeling domain
 is as follows (note how biology-specific functions are not used, and a custom
-belief_scorer and hierarchies are passed to `run_preassembly` here, while the
+belief_scorer and ontology is passed to `run_preassembly` here, while the
 biology pipeline used default values):
 
 [//]: # (If code is changed here, also update it in tests/test_docs_code.py)
@@ -204,15 +211,14 @@ biology pipeline used default values):
 ```python
 from indra.tools import assemble_corpus as ac
 from indra.belief.wm_scorer import get_eidos_scorer
-from indra.preassembler.hierarchy_manager import get_wm_hierarchies
+from indra.ontology.world import world_ontology
 stmts = <the collection of all raw statements to use>
 stmts = ac.filter_grounded_only(stmts)  # Filter out ungrounded agents
-hierarchies = get_wm_hierarchies()
 belief_scorer = get_eidos_scorer()
 stmts = ac.run_preassembly(stmts,       # Run preassembly
                            return_toplevel=False,
                            belief_scorer=belief_scorer,
-                           hierarchies=hierarchies,
+                           ontology=world_ontology,
                            normalize_equivalences=True,     # Optional: rewrite equivalent groundings to one standard
                            normalize_opposites=True,        # Optional: rewrite opposite groundings to one standard
                            normalize_ns='WM')               # Use 'WM' namespace to normalize equivalences and opposites 
@@ -243,8 +249,9 @@ Molecular Systems Biology, 13, 954.
 For detailed installation instructions,
 [see the documentation](http://indra.readthedocs.io/en/latest/installation.html).
 
-INDRA currently supports Python 3.5+. The last release of INDRA compatible
-with Python 2.7 was 1.10.
+INDRA currently supports Python 3.6+. The last release of INDRA compatible
+with Python 2.7 is 1.10, and the last release fully compatible with Python 3.5
+is 1.17.
 
 The preferred way to install INDRA is by pointing pip to the source repository
 as
@@ -268,10 +275,9 @@ which are described in detail in the
 
 
 ## INDRA REST API
-A REST API for INDRA is available at http://api.indra.bio:8000 with
-documentation at http://www.indra.bio/rest_api/docs. Note that the REST API
-is ideal for prototyping and for building light-weight web apps, but should
-not be used for large reading and assembly workflows.
+A REST API for INDRA is available at http://api.indra.bio:8000.
+Note that the REST API is ideal for prototyping and for building light-weight
+web apps, but should not be used for large reading and assembly workflows.
 
 
 ## INDRA Docker
@@ -368,8 +374,6 @@ extracted from the neighborhood query.
 
 Next, we look at an example of querying the [Pathway Commons
 database](http://pathwaycommons.org) for paths between two lists of proteins.
-Note: see installation notes above for installing pyjnius, which is required
-for using the BioPAX API of INDRA.
 
 [//]: # (If code is changed here, also update it in tests/test_docs_code.py)
 

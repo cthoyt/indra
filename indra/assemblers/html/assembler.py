@@ -13,10 +13,11 @@ from os.path import abspath, dirname, join
 from jinja2 import Environment, FileSystemLoader
 
 from indra.statements import *
-from indra.assemblers.english import EnglishAssembler
+from indra.assemblers.english import EnglishAssembler, AgentWithCoordinates
 from indra.databases import get_identifiers_url
 from indra.util.statement_presentation import group_and_sort_statements, \
     make_top_level_label_from_names_key, make_stmt_from_sort_key
+from indra.literature import id_lookup
 
 logger = logging.getLogger(__name__)
 HERE = dirname(abspath(__file__))
@@ -31,7 +32,8 @@ color_schemes = {
     'dark': ['#b2df8a', '#000099', '#6a3d9a', '#1f78b4', '#fdbf6f', '#ff7f00',
              '#cab2d6', '#fb9a99', '#a6cee3', '#33a02c', '#b15928', '#e31a1c'],
     'light': ['#bc80bd', '#fccde5', '#b3de69', '#80b1d3', '#fb8072', '#bebada',
-              '#fdb462', '#8dd3c7', '#ffffb3', '#d9d9d9', '#ccebc5', '#ffed6f']
+              '#fdb462', '#d9d9d9', '#8dd3c7', '#ffed6f', '#ccebc5', '#e0e03d',
+              '#ffe8f4', '#acfcfc', '#dd99ff']
 }
 
 
@@ -41,21 +43,31 @@ def color_gen(scheme):
             yield color
 
 
+db_sources = ['phosphosite', 'cbn', 'pc11', 'biopax', 'bel_lc',
+              'signor', 'biogrid', 'lincs_drug', 'tas', 'hprd', 'trrust',
+              'ctd', 'virhostnet', 'phosphoelm', 'drugbank']
+
+reader_sources = ['geneways', 'tees', 'isi', 'trips', 'rlimsp', 'medscan',
+                  'sparser', 'eidos', 'reach']
+
+all_sources = db_sources + reader_sources
+
+# These are mappings where the actual INDRA source, as it appears
+# in the evidence source_api is inconsistent with the colors here and
+# with what comes out of the INDRA DB
+internal_source_mappings = {
+    'bel': 'bel_lc'
+}
+
+
 SOURCE_COLORS = [
     ('databases', {'color': 'black',
-                   'sources': dict(zip(['phosphosite', 'cbn', 'pc11',
-                                        'biopax', 'bel_lc',
-                                        'signor', 'biogrid', 'tas',
-                                        'lincs_drug', 'hprd', 'trrust'],
+                   'sources': dict(zip(db_sources,
                                        color_gen('light')))}),
     ('reading', {'color': 'white',
-                 'sources': dict(zip(['geneways', 'tees', 'isi', 'trips',
-                                      'rlimsp', 'medscan', 'sparser', 'reach'],
+                 'sources': dict(zip(reader_sources,
                                      color_gen('light')))}),
 ]
-
-SRC_KEY_DICT = {src: src for _, d in SOURCE_COLORS
-                for src in d['sources'].keys()}
 
 
 class HtmlAssembler(object):
@@ -80,12 +92,18 @@ class HtmlAssembler(object):
         INDRA REST API. Default is None. Each value should be a concise
         summary of O(1), not of order the length of the list, such as the
         evidence totals. The keys should be informative human-readable strings.
-    ev_totals : Optional[dict]
+    ev_counts : Optional[dict]
         A dictionary of the total evidence available for each
-        statement indexed by hash. Default: None
+        statement indexed by hash. If not provided, the statements that are
+        passed to the constructor are used to determine these, with whatever
+        evidences these statements carry.
+    ev_totals : Optional[dict]
+        DEPRECATED. Same as ev_counts which should be used instead.
     source_counts : Optional[dict]
         A dictionary of the itemized evidence counts, by source, available for
-        each statement, indexed by hash. Default: None.
+        each statement, indexed by hash. If not provided, the statements
+        that are passed to the constructor are used to determine these, with
+        whatever evidences these statements carry.
     title : str
         The title to be printed at the top of the page.
     db_rest_url : Optional[str]
@@ -105,7 +123,7 @@ class HtmlAssembler(object):
     metadata : dict
         Dictionary of statement list metadata such as that provided by the
         INDRA REST API.
-    ev_totals : dict
+    ev_counts : dict
         A dictionary of the total evidence available for each
         statement indexed by hash.
     db_rest_url : str
@@ -113,14 +131,20 @@ class HtmlAssembler(object):
     """
 
     def __init__(self, statements=None, summary_metadata=None, ev_totals=None,
-                 source_counts=None, curation_dict=None, title='INDRA Results',
+                 ev_counts=None, source_counts=None, curation_dict=None,
+                 title='INDRA Results',
                  db_rest_url=None):
         self.title = title
         self.statements = [] if statements is None else statements
         self.metadata = {} if summary_metadata is None \
             else summary_metadata
-        self.ev_totals = {} if ev_totals is None else ev_totals
-        self.source_counts = {} if source_counts is None else source_counts
+        # If the deprecated parameter is used, we make sure we take it
+        if not ev_counts and ev_totals:
+            ev_counts = ev_totals
+        self.ev_counts = get_available_ev_counts(self.statements) \
+            if ev_counts is None else standardize_counts(ev_counts)
+        self.source_counts = get_available_source_counts(self.statements) \
+            if source_counts is None else standardize_counts(source_counts)
         self.curation_dict = {} if curation_dict is None else curation_dict
         self.db_rest_url = db_rest_url
         self.model = None
@@ -154,7 +178,7 @@ class HtmlAssembler(object):
         # Get an iterator over the statements, carefully grouped.
         stmt_rows = group_and_sort_statements(
             self.statements,
-            self.ev_totals if self.ev_totals else None,
+            self.ev_counts if self.ev_counts else None,
             self.source_counts if self.source_counts else None)
 
         # Do some extra formatting.
@@ -202,8 +226,8 @@ class HtmlAssembler(object):
                 # Format some strings nicely.
                 ev_list = _format_evidence_text(stmt, self.curation_dict)
                 english = _format_stmt_text(stmt)
-                if self.ev_totals:
-                    tot_ev = self.ev_totals.get(int(stmt_hash), '?')
+                if self.ev_counts:
+                    tot_ev = self.ev_counts.get(int(stmt_hash), '?')
                     if tot_ev == '?':
                         logger.warning('The hash %s was not found in the '
                                        'evidence totals dict.' % stmt_hash)
@@ -229,7 +253,12 @@ class HtmlAssembler(object):
                         del ag.db_refs[dbn]
 
             # Update the top level grouping.
-            tl_names = key[1]
+            if isinstance(stmt, (ActiveForm, HasActivity)):
+                tl_names = [key[1][0]]
+            elif isinstance(stmt, Conversion):
+                tl_names = [key[1][0]] + [*key[1][1]] + [*key[1][2]]
+            else:
+                tl_names = key[1]
             if with_grouping:
                 tl_key = '-'.join([str(name) for name in tl_names])
                 tl_agents = {name: Agent(name) for name in tl_names
@@ -290,7 +319,7 @@ class HtmlAssembler(object):
                         if isinstance(dbid, set):
                             logger.info("Removing %s from top level refs "
                                         "due to multiple matches: %s"
-                                           % (dbn, dbid))
+                                        % (dbn, dbid))
                             del ag.db_refs[dbn]
                 tl_label = make_top_level_label_from_names_key(tlg['names'])
                 tl_label = re.sub("<b>(.*?)</b>", r"\1", tl_label)
@@ -299,7 +328,8 @@ class HtmlAssembler(object):
 
         return stmts
 
-    def make_model(self, template=None, with_grouping=True, **template_kwargs):
+    def make_model(self, template=None, with_grouping=True,
+                   add_full_text_search_link=False, **template_kwargs):
         """Return the assembled HTML content as a string.
 
         Parameters
@@ -312,10 +342,13 @@ class HtmlAssembler(object):
             If True, statements will be grouped under multiple sub-headings. If
             False, all headings will be collapsed into one on every level, with
             all statements placed under a single heading.
+        add_full_text_search_link : bool
+            If True, link with Text fragment search in PMC journal will be
+            added for the statements.  
 
-        All other keyword arguments are passed along to the template. If you
-        are using a custom template with args that are not passed below, this
-        is how you pass them.
+            All other keyword arguments are passed along to the template. If you
+            are using a custom template with args that are not passed below, this
+            is how you pass them.
 
         Returns
         -------
@@ -323,6 +356,23 @@ class HtmlAssembler(object):
             The assembled HTML as a string.
         """
         tl_stmts = self.make_json_model(with_grouping)
+
+        if add_full_text_search_link:
+            for statement in tl_stmts:
+                statement = tl_stmts[statement]
+                for stmt_formatted in statement["stmts_formatted"]:
+                    for stmt_info in stmt_formatted["stmt_info_list"]:
+                        for evidence in stmt_info["evidence"]:
+                            if 'PMCID' not in evidence.get('text_refs', {}):
+                                if evidence.get('pmid'):
+                                    ev_pmcid = id_lookup(
+                                        evidence['pmid'], 'pmid') \
+                                        .get('pmcid', None)
+                                    if ev_pmcid:
+                                        evidence['pmcid'] = ev_pmcid
+                            else:
+                                evidence['pmcid'] = \
+                                    evidence['text_refs']['PMCID']
 
         metadata = {k.replace('_', ' ').title(): v
                     for k, v in self.metadata.items()
@@ -336,13 +386,15 @@ class HtmlAssembler(object):
         if template is None:
             template = default_template
         if self.source_counts and 'source_key_dict' not in template_kwargs:
-            template_kwargs['source_key_dict'] = SRC_KEY_DICT
+            template_kwargs['source_key_dict'] = \
+                {src: src for src in all_sources}
         if 'source_colors' not in template_kwargs:
             template_kwargs['source_colors'] = SOURCE_COLORS
 
         self.model = template.render(stmt_data=tl_stmts,
                                      metadata=metadata, title=self.title,
                                      db_rest_url=db_rest_url,
+                                     add_full_text_search_link=add_full_text_search_link,  # noqa
                                      **template_kwargs)
         return self.model
 
@@ -369,7 +421,7 @@ class HtmlAssembler(object):
             fh.write(self.model.encode('utf-8'))
 
 
-def _format_evidence_text(stmt, curation_dict=None):
+def _format_evidence_text(stmt, curation_dict=None, correct_tags=None):
     """Returns evidence metadata with highlighted evidence text.
 
     Parameters
@@ -388,6 +440,8 @@ def _format_evidence_text(stmt, curation_dict=None):
     """
     if curation_dict is None:
         curation_dict = {}
+    if correct_tags is None:
+        correct_tags = ['correct']
 
     def get_role(ag_ix):
         if isinstance(stmt, Complex) or \
@@ -404,10 +458,10 @@ def _format_evidence_text(stmt, curation_dict=None):
     for ix, ev in enumerate(stmt.evidence):
         # Expand the source api to include the sub-database
         if ev.source_api == 'biopax' and \
-           'source_sub_id' in ev.annotations and \
-           ev.annotations['source_sub_id']:
-           source_api = '%s:%s' % (ev.source_api,
-                                   ev.annotations['source_sub_id'])
+                'source_sub_id' in ev.annotations and \
+                ev.annotations['source_sub_id']:
+            source_api = '%s:%s' % (ev.source_api,
+                                    ev.annotations['source_sub_id'])
         else:
             source_api = ev.source_api
         # Prepare the evidence text
@@ -436,18 +490,25 @@ def _format_evidence_text(stmt, curation_dict=None):
                 # Build up a set of indices
                 indices += [(m.start(), m.start() + len(ag_text),
                              ag_text, tag_start, tag_close)
-                             for m in re.finditer(re.escape(ag_text),
-                                                  ev.text)]
+                            for m in re.finditer(re.escape(ag_text), ev.text)]
             format_text = tag_text(ev.text, indices)
 
         curation_key = (stmt.get_hash(), ev.source_hash)
-        num_curations = len(curation_dict.get(curation_key, []))
+        curations = curation_dict.get(curation_key, [])
+        num_curations = len(curations)
+        num_correct = len(
+            [cur for cur in curations if cur['error_type'] in correct_tags])
+        num_incorrect = num_curations - num_correct
+        text_refs = {k.upper(): v for k, v in ev.text_refs.items()}
         ev_list.append({'source_api': source_api,
                         'pmid': ev.pmid,
-                        'text_refs': ev.text_refs,
+                        'text_refs': text_refs,
                         'text': format_text,
                         'source_hash': str(ev.source_hash),
-                        'num_curations': num_curations})
+                        'num_curations': num_curations,
+                        'num_correct': num_correct,
+                        'num_incorrect': num_incorrect
+                        })
 
     return ev_list
 
@@ -458,7 +519,8 @@ def _format_stmt_text(stmt):
     english = ea.make_model()
     if not english:
         english = str(stmt)
-    return tag_agents(english, stmt.agent_list())
+        return tag_agents(english, stmt.agent_list())
+    return tag_agents(english, ea.stmt_agents[0])
 
 
 def _cautiously_merge_refs(from_ag, to_ag):
@@ -479,26 +541,34 @@ def _cautiously_merge_refs(from_ag, to_ag):
 
 
 def tag_agents(english, agents):
+    # Agents can be AgentWithCoordinates (preferred) or regular Agent objects
     indices = []
     for ag in agents:
         if ag is None or not ag.name:
             continue
         url = id_url(ag)
         if url is None:
-            continue
-        # Build up a set of indices
-        tag_start = "<a href='%s' target='_blank'>" % url
-        tag_close = "</a>"
-        found = False
-        for m in re.finditer(re.escape(ag.name), english):
-            index = (m.start(), m.start() + len(ag.name), ag.name,
-                     tag_start, tag_close)
+            tag_start = '<b>'
+            tag_close = '</b>'
+        else:
+            tag_start = "<a href='%s' target='_blank'>" % url
+            tag_close = "</a>"
+        # If coordinates are passed, use them. Otherwise, try to find agent
+        # names in english text
+        if isinstance(ag, AgentWithCoordinates):
+            index = (ag.coords[0], ag.coords[1], ag.name, tag_start, tag_close)
             indices.append(index)
-            found = True
-        if not found and \
-                english.startswith(re.escape(ag.name).capitalize()):
-            index = (0, len(ag.name), ag.name, tag_start, tag_close)
-            indices.append(index)
+        elif isinstance(ag, Agent):
+            found = False
+            for m in re.finditer(re.escape(ag.name), english):
+                index = (m.start(), m.start() + len(ag.name), ag.name,
+                         tag_start, tag_close)
+                indices.append(index)
+                found = True
+            if not found and \
+                    english.startswith(re.escape(ag.name).capitalize()):
+                index = (0, len(ag.name), ag.name, tag_start, tag_close)
+                indices.append(index)
     return tag_text(english, indices)
 
 
@@ -506,11 +576,12 @@ def id_url(ag):
     # Return identifier URLs in a prioritized order
     for db_name in ('FPLX', 'HGNC', 'UP',
                     'GO', 'MESH',
-                    'CHEBI', 'PUBCHEM', 'HMDB',
+                    'CHEBI', 'PUBCHEM', 'HMDB', 'DRUGBANK', 'CHEMBL',
+                    'HMS-LINCS', 'CAS',
                     'IP', 'PF', 'NXPFA',
                     'MIRBASEM', 'MIRBASE',
                     'NCIT',
-                    'UN', 'HUME', 'CWMS', 'SOFIA'):
+                    'WM', 'UN', 'HUME', 'CWMS', 'SOFIA'):
         if db_name in ag.db_refs:
             # Handle a special case where a list of IDs is given
             if isinstance(ag.db_refs[db_name], list):
@@ -518,7 +589,7 @@ def id_url(ag):
                 if db_name == 'CHEBI':
                     if not db_id.startswith('CHEBI'):
                         db_id = 'CHEBI:%s' % db_id
-                elif db_name in ('UN', 'HUME'):
+                elif db_name in ('UN', 'WM', 'HUME'):
                     db_id = db_id[0]
             else:
                 db_id = ag.db_refs[db_name]
@@ -574,6 +645,9 @@ def tag_text(text, tag_info_list):
     format_text = ''
     start_pos = 0
     for i, j, ag_text, tag_start, tag_close in tag_info_list:
+        # Capitalize if it's the beginning of a sentence
+        if i == 0:
+            ag_text = ag_text[0].upper() + ag_text[1:]
         # Add the text before this agent, if any
         format_text += text[start_pos:i]
         # Add wrapper for this entity
@@ -583,3 +657,40 @@ def tag_text(text, tag_info_list):
     # Add the last section of text
     format_text += text[start_pos:]
     return format_text
+
+
+def standardize_counts(counts):
+    """Standardize hash-based counts dicts to be int-keyed."""
+    standardized_counts = {}
+    for k, v in counts.items():
+        try:
+            int_k = int(k)
+            standardized_counts[int_k] = v
+        except ValueError:
+            logger.warning('Could not convert statement hash %s to int' % k)
+    return standardized_counts
+
+
+def get_available_ev_counts(stmts):
+    return {stmt.get_hash(): len(stmt.evidence) for stmt in stmts}
+
+
+def get_available_source_counts(stmts):
+    return {stmt.get_hash(): _get_available_ev_source_counts(stmt.evidence)
+            for stmt in stmts}
+
+
+def _get_available_ev_source_counts(evidences):
+    counts = _get_initial_source_counts()
+    for ev in evidences:
+        sa = internal_source_mappings.get(ev.source_api, ev.source_api)
+        try:
+            counts[sa] += 1
+        except KeyError:
+            continue
+    return counts
+
+
+def _get_initial_source_counts():
+    return {s: 0 for s in all_sources}
+

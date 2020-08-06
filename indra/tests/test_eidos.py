@@ -2,10 +2,10 @@ import os
 import json
 import requests
 import datetime
-import unittest
 from nose.plugins.attrib import attr
 from indra.sources import eidos
-from indra.statements import Influence, Association, Event
+from indra.sources.eidos.api import get_agent_bio
+from indra.statements import Influence, Association, Event, Concept
 from indra.assemblers.cag import CAGAssembler
 from indra.assemblers.cx import CxAssembler
 from indra.assemblers.pysb import PysbAssembler
@@ -245,3 +245,35 @@ def test_geoloc_obj():
     ev = st.evidence[0]
     assert not ev.context, ev.context
     assert st.obj.context
+
+
+def test_bio_entity_extract():
+    jsonld = os.path.join(path_this, 'eidos_bio_abstract.json')
+    with open(jsonld, 'r') as fh:
+        js = json.load(fh)
+    agents = eidos.process_json_bio_entities(js)
+    assert len(agents) == 11
+    from indra.statements import Agent
+    assert all(isinstance(a, Agent) for a in agents)
+    ag = [a for a in agents if a.name == 'Therapeutics'][0]
+    assert ag.db_refs['MESH'] == 'D013812'
+    assert ag.db_refs['EFO'] == '0000727'
+
+
+def test_get_agent_bio():
+    # (raw text, normalized text, groundings, name)
+    groundings = (
+        ('xxx', 'yyy', {}, 'yyy'),
+        ('xxx', 'checklist', {'MESH': 'D057189'}, 'Checklist'),
+        ('checklist', 'yyy', {'MESH': 'D057189'}, 'Checklist'),
+        ('checklist', 'life insurance', {'MESH': 'D057189'}, 'Checklist')
+    )
+
+    for raw_text, norm_text, groundings, name in groundings:
+        concept = Concept(norm_text, db_refs={'TEXT': raw_text})
+        agent = get_agent_bio(concept)
+        assert agent.name == name, agent
+        for ns, id in groundings.items():
+            assert agent.db_refs.get(ns) == id, agent.db_refs
+        assert agent.db_refs['TEXT'] == raw_text
+        assert agent.db_refs['TEXT_NORM'] == norm_text

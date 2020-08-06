@@ -16,6 +16,12 @@ Pubmed Central client (:py:mod:`indra.literature.pmc_client`)
 .. automodule:: indra.literature.pmc_client
     :members:
 
+bioRxiv client (:py:mod:`indra.literature.biorxiv_client`)
+----------------------------------------------------------
+
+.. automodule:: indra.literature.biorxiv_client
+    :members:
+
 CrossRef client (:py:mod:`indra.literature.crossref_client`)
 ------------------------------------------------------------
 
@@ -40,3 +46,8 @@ Deft Tools (:py:mod:`indra.literature.adeft_tools`)
 .. automodule:: indra.literature.adeft_tools
     :members:
 
+DART client (:py:mod:`indra.literature.dart_client`)
+----------------------------------------------------
+
+.. automodule:: indra.literature.dart_client
+    :members:

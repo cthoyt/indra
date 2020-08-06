@@ -29,6 +29,11 @@ url_prefixes = {
     'EFO': '%s/efo/' % identifiers_url,
     'HP': '%s/hp/' % identifiers_url,
     'DOID': '%s/' % identifiers_url,  # note that IDs start with DOID:
+    'ECCODE': '%s/ec-code:' % identifiers_url,
+    'CAS': '%s/cas:' % identifiers_url,
+    'DRUGBANK': '%s/drugbank:' % identifiers_url,
+    'TAXONOMY': '%s/taxonomy:' % identifiers_url,
+    'BTO': '%s/BTO:' % identifiers_url,
     'NXPFA': 'https://www.nextprot.org/term/FA-',
     'SIGNOR': 'https://signor.uniroma2.it/relation_result.php?id=',
     'NONCODE': 'http://www.noncode.org/show_gene.php?id=NONHSAG',
@@ -39,6 +44,9 @@ url_prefixes = {
              '/hume_ontology/'),
     'CWMS': 'http://trips.ihmc.us/',
     'SOFIA': 'http://cs.cmu.edu/sofia/',
+    'HGNC_GROUP': 'https://www.genenames.org/data/genegroup/#!/group/',
+    'PR': 'https://proconsortium.org/app/entry/PR%3A',
+    'GENBANK': 'https://www.ncbi.nlm.nih.gov/protein/'
 }
 
 
@@ -93,7 +101,7 @@ def get_identifiers_url(db_name, db_id):
             url = 'http://www.lncrnadb.org/search/?q=%s' % db_id
         else:  # Assmuing HGNC symbol
             url = 'http://www.lncrnadb.org/%s/' % db_id
-    elif db_name == 'TEXT':
+    elif db_name == 'TEXT' or db_name == 'TEXT_NORM':
         return None
     # TODO: we should return the parent UniProt ID here but only once that
     # can be obtained from protmapper in a faster way

@@ -19,22 +19,10 @@ ChEBI client (:py:mod:`indra.databases.chebi_client`)
 .. automodule:: indra.databases.chebi_client
     :members:
 
-BioGRID client (:py:mod:`indra.databases.biogrid_client`)
----------------------------------------------------------
-
-.. automodule:: indra.databases.biogrid_client
-    :members:
-
 Cell type context client (:py:mod:`indra.databases.context_client`)
 -------------------------------------------------------------------
 
 .. automodule:: indra.databases.context_client
-    :members:
-
-Network relevance client (:py:mod:`indra.databases.relevance_client`)
----------------------------------------------------------------------
-
-.. automodule:: indra.databases.relevance_client
     :members:
 
 NDEx client (:py:mod:`indra.databases.ndex_client`)
@@ -97,4 +85,14 @@ Human Phenotype Ontology (HP) client (:py:mod:`indra.databases.hp_client`)
 Disease Ontology (DOID) client (:py:mod:`indra.databases.doid_client`)
 ----------------------------------------------------------------------
 .. automodule:: indra.databases.doid_client
+    :members:
+
+Taxonomy client (:py:mod:`indra.databases.taxonomy_client`)
+-----------------------------------------------------------
+.. automodule:: indra.databases.taxonomy_client
+    :members:
+
+DrugBank client (:py:mod:`indra.databases.drugbank_client`)
+-----------------------------------------------------------
+.. automodule:: indra.databases.drugbank_client
     :members:

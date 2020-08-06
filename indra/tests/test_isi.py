@@ -15,12 +15,13 @@ def test_process_complex():
 
     m0 = s0.members[0]
     assert m0.name == 'RAS', m0
-    assert m0.db_refs == {'TEXT': 'Ras', 'FPLX': 'RAS'}, \
-        m0.db_refs
+    assert m0.db_refs['TEXT'] == 'Ras', m0.db_refs
+    assert m0.db_refs['FPLX'] == 'RAS', m0.db_refs
 
     m1 = s0.members[1]
     assert m1.name == 'RAF', m1
-    assert m1.db_refs == {'TEXT': 'Raf', 'FPLX': 'RAF'}, m1.db_refs
+    assert m1.db_refs['TEXT'] == 'Raf', m1.db_refs
+    assert m1.db_refs['FPLX'] == 'RAF', m1.db_refs
 
     assert len(s0.evidence) == 1
     ev = s0.evidence[0]
@@ -29,6 +30,8 @@ def test_process_complex():
     assert ev.text == 'Ras binds to Raf.'
     assert ev.annotations['interaction'] == ['binds', None, 'Ras', 'Raf']
     assert ev.annotations['source_id'] is not None
+    ip.retain_molecular_complexes()
+    assert ip.statements
 
 
 def test_process_phosphorylation():
@@ -44,11 +47,13 @@ def test_process_phosphorylation():
 
     enz = s0.enz
     assert enz.name == 'RAS'
-    assert enz.db_refs == {'TEXT': 'Ras', 'FPLX': 'RAS'}
+    assert enz.db_refs['TEXT'] == 'Ras'
+    assert enz.db_refs['FPLX'] == 'RAS'
 
     sub = s0.sub
     assert sub.name == 'RAF'
-    assert sub.db_refs == {'TEXT': 'Raf', 'FPLX': 'RAF'}
+    assert sub.db_refs['TEXT'] == 'Raf'
+    assert sub.db_refs['FPLX'] == 'RAF'
 
     assert len(s0.evidence) == 1
     ev = s0.evidence[0]
@@ -57,3 +62,6 @@ def test_process_phosphorylation():
     assert ev.text == 'Ras phosphorylates Raf.'
     assert ev.annotations['interaction'] == ['phosphorylates', 'Ras', 'Raf']
     assert ev.annotations['source_id'] is not None
+
+    ip.retain_molecular_complexes()
+    assert not ip.statements

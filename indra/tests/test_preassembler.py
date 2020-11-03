@@ -968,9 +968,9 @@ def test_matches_key_fun():
             matches_key = stmt.matches_key()
         return matches_key
 
-    def event_location_refinement(st1, st2, bio_ontology):
+    def event_location_refinement(st1, st2, ontology, entities_refined):
         if isinstance(st1, Event) and isinstance(st2, Event):
-            ref = st1.refinement_of(st2, bio_ontology)
+            ref = st1.refinement_of(st2, ontology)
             if not ref:
                 return False
             if not has_location(st2):
@@ -1028,3 +1028,21 @@ def test_uppro_assembly():
     unique_stmts = pa.combine_duplicates()
     assert len(unique_stmts) == 2
 
+
+def test_split_idx():
+    ras = Agent('RAS', db_refs={'FPLX': 'RAS'})
+    kras = Agent('KRAS', db_refs={'HGNC': '6407'})
+    hras = Agent('HRAS', db_refs={'HGNC': '5173'})
+    st1 = Phosphorylation(Agent('x'), ras)
+    st2 = Phosphorylation(Agent('x'), kras)
+    st3 = Phosphorylation(Agent('x'), hras)
+    pa = Preassembler(bio_ontology)
+    maps = pa._generate_id_maps([st1, st2, st3])
+    assert (1, 0) in maps, maps
+    assert (2, 0) in maps, maps
+    assert pa._comparison_counter == 2
+    pa = Preassembler(bio_ontology)
+    maps = pa._generate_id_maps([st1, st2, st3], split_idx=1)
+    assert (2, 0) in maps, maps
+    assert (1, 0) not in maps, maps
+    assert pa._comparison_counter == 1

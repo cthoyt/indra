@@ -37,7 +37,9 @@ always_include = {
     'UP:Q02750', 'UP:P01112', 'UP:P01019', 'UP:Q9MZT7', 'UP:Q13422',
     'HMDB:HMDB0000122', 'HGNC:7', 'HGNC:5', 'MIRBASE:MI0001730',
     'HGNC:31476', 'DRUGBANK:DB00001', 'MESH:D013812', 'CHEBI:CHEBI:26523',
-    'UP:Q99490', 'MESH:D008099', 'MESH:D057189'
+    'UP:Q99490', 'MESH:D008099', 'MESH:D057189',
+    'UP:P15056', 'UP:O60674', 'UP:P0DP23', 'UP:Q13507', 'UP:P36507',
+    'DRUGBANK:DB00305'
 }
 
 always_include_ns = {'FPLX', 'INDRA_ACTIVITIES', 'INDRA_MODS'}
@@ -70,7 +72,6 @@ if __name__ == '__main__':
         if node not in keep_nodes:
             bio_ontology.remove_node(node)
     bio_ontology._build_name_lookup()
-    bio_ontology._label_components()
     bio_ontology._build_transitive_closure()
     fname = os.path.join(CACHE_DIR, 'mock_ontology.pkl')
     with open(fname, 'wb') as fh:

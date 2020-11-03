@@ -45,6 +45,7 @@ Standard Molecular Pathway Databases
    virhostnet/index
    ctd/index
    drugbank/index
+   omnipath/index
 
 Custom Knowledge Bases
 ----------------------
@@ -52,7 +53,7 @@ Custom Knowledge Bases
    :maxdepth: 3
 
    tas/index
-   lincs_drug/index
    ndex_cx/index
    indra_db_rest/index
    hypothesis/index
+   biofactoid/index

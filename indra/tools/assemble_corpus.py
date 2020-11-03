@@ -29,7 +29,8 @@ def _filter(kwargs, arg_list):
     return dict(filter(lambda x: x[0] in arg_list, kwargs.items()))
 
 
-def dump_statements(stmts, fname, protocol=4):
+@register_pipeline
+def dump_statements(stmts_in, fname, protocol=4):
     """Dump a list of statements into a pickle file.
 
     Parameters
@@ -40,9 +41,10 @@ def dump_statements(stmts, fname, protocol=4):
         The pickle protocol to use (use 2 for Python 2 compatibility).
         Default: 4
     """
-    logger.info('Dumping %d statements into %s...' % (len(stmts), fname))
+    logger.info('Dumping %d statements into %s...' % (len(stmts_in), fname))
     with open(fname, 'wb') as fh:
-        pickle.dump(stmts, fh, protocol=protocol)
+        pickle.dump(stmts_in, fh, protocol=protocol)
+    return stmts_in
 
 
 def load_statements(fname, as_dict=False):
@@ -377,7 +379,7 @@ def run_preassembly(stmts_in, return_toplevel=True, poolsize=None,
                     matches_fun=None, refinement_fun=None, refinement_ns=None,
                     flatten_evidence=False, flatten_evidence_collect_from=None,
                     normalize_equivalences=False, normalize_opposites=False,
-                    normalize_ns='WM', **kwargs):
+                    normalize_ns='WM', run_refinement=True, **kwargs):
     """Run preassembly on a list of statements.
 
     Parameters
@@ -452,7 +454,9 @@ def run_preassembly(stmts_in, return_toplevel=True, poolsize=None,
         logger.info('Normalizing opposites on %d statements' % len(pa.stmts))
         pa.normalize_opposites(normalize_ns)
 
-    run_preassembly_duplicate(pa, be, save=dump_pkl_unique)
+    dedupl_stmts = run_preassembly_duplicate(pa, be, save=dump_pkl_unique)
+    if not run_refinement:
+        return dedupl_stmts
 
     dump_pkl = kwargs.get('save')
     size_cutoff = size_cutoff if size_cutoff else 100
@@ -576,9 +580,11 @@ def filter_by_type(stmts_in, stmt_type, invert=False, **kwargs):
     ----------
     stmts_in : list[indra.statements.Statement]
         A list of statements to filter.
-    stmt_type : indra.statements.Statement
-        The class of the statement type to filter for.
-        Example: indra.statements.Modification
+    stmt_type : str or indra.statements.Statement
+        The class of the statement type to filter for. Alternatively,
+        a string matching the name of the statement class, e.g.,
+        "Activation" can be used.
+        Example: indra.statements.Modification or "Modification"
     invert : Optional[bool]
         If True, the statements that are not of the given type
         are returned. Default: False
@@ -590,6 +596,8 @@ def filter_by_type(stmts_in, stmt_type, invert=False, **kwargs):
     stmts_out : list[indra.statements.Statement]
         A list of filtered statements.
     """
+    if isinstance(stmt_type, str):
+        stmt_type = get_statement_by_name(stmt_type)
     logger.info('Filtering %d statements for type %s%s...' %
                 (len(stmts_in), 'not ' if invert else '',
                  stmt_type.__name__))

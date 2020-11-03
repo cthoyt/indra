@@ -382,12 +382,25 @@ def belgraph_to_signed_graph(
         belgraph, include_variants=True, symmetric_variant_links=False,
         include_components=True, symmetric_component_links=False,
         propagate_annotations=False):
+
+    def get_ns(n):
+        # For nodes containing several agents (complex abundance or reaction)
+        # return namespace of the first member
+        if isinstance(n, complex_abundance):
+            return get_ns(n.members[0])
+        if isinstance(n, reaction):
+            return get_ns(n.products[0])
+        return n.namespace
+
+    graph = nx.MultiDiGraph()
+    for n in belgraph.nodes:
+        graph.add_node(n, ns=get_ns(n))
     edge_set = set()
     for u, v, edge_data in belgraph.edges(data=True):
         rel = edge_data.get('relation')
         pos_edge = \
             (u, v, ('sign', 0)) + \
-            tuple((k, v)
+            tuple((k, tuple(v))
                   for k, v in edge_data.get('annotations', {}).items()) \
             if propagate_annotations else (u, v, ('sign', 0))
         # Unpack tuple pairs at indices >1 or they'll be in nested tuples
@@ -409,7 +422,6 @@ def belgraph_to_signed_graph(
         else:
             continue
 
-    graph = nx.MultiDiGraph()
     graph.add_edges_from((t[0], t[1], dict(t[2:])) for t in edge_set)
     return graph
 
@@ -445,9 +457,9 @@ def _update_edge_data_from_evidence(evidence, edge_data):
 
 def _get_annotations_from_stmt(stmt):
     return {
-        'stmt_hash': stmt.get_hash(refresh=True),
-        'uuid': stmt.uuid,
-        'belief': stmt.belief
+        'stmt_hash': {stmt.get_hash(refresh=True): True},
+        'uuid': {stmt.uuid: True},
+        'belief': {stmt.belief: True},
     }
 
 
@@ -614,17 +626,19 @@ def _get_evidence(evidence):
         )
 
     annotations = {
-        'source_hash': evidence.get_source_hash(),
+        'source_hash': {evidence.get_source_hash(): True},
     }
     if evidence.source_api:
-        annotations['source_api'] = evidence.source_api
+        annotations['source_api'] = {evidence.source_api: True}
     if evidence.source_id:
-        annotations['source_id'] = evidence.source_id
+        annotations['source_id'] = {evidence.source_id: True}
     for key, value in evidence.epistemics.items():
-        if key == 'direct':
+        if key == 'direct' or value is None:
             continue
-        annotations[key] = value
-
+        if isinstance(value, (list, set, tuple)):
+            annotations[key] = {v: True for v in value}
+        else:
+            annotations[key] = {value: True}
     return citation, text, annotations
 
 

@@ -184,15 +184,11 @@ def test_multiple_enzymes():
                                 offline=offline)
         assert rp is not None
         assert len(rp.statements) == 2
-        s = rp.statements[0]
-        if s.enz.name == 'MAP2K1':
-            assert rp.statements[1].enz.name == 'MAP2K2'
-        else:
-            assert rp.statements[1].enz.name == 'MAP2K1'
-        assert (s.sub.name == 'MAPK3')
-        s = rp.statements[1]
-        assert (s.sub.name == 'MAPK3')
-        assert unicode_strs(rp.statements)
+        stmts = sorted(rp.statements, key=lambda x: x.enz.name)
+        assert stmts[0].enz.name == 'MAP2K1', stmts
+        assert stmts[1].enz.name == 'MAP2K2', stmts
+        assert stmts[0].sub.name == 'MAPK3', stmts
+        assert stmts[1].sub.name == 'MAPK3', stmts
 
 
 def test_activate():
@@ -345,24 +341,24 @@ def assert_pmid(stmt):
 
 def test_process_mod_condition1():
     test_cases = [
-        ('MEK1 activates ERK1 that is phosphorylated.',
+        ('phosphorylated MEK1 activates ERK1.',
          'phosphorylation', None, None, True),
-        ('MEK1 activates ERK1 that is phosphorylated on tyrosine.',
-         'phosphorylation', 'Y', None, True),
-        ('MEK1 activates ERK1 that is phosphorylated on Y185.',
-         'phosphorylation', 'Y', '185', True),
+        ('MEK1 that is phosphorylated on serine activates ERK1.',
+         'phosphorylation', 'S', None, True),
+        ('MEK1 that is phosphorylated on S222 activates ERK1.',
+         'phosphorylation', 'S', '222', True),
         ]
     for offline in offline_modes:
         for sentence, mod_type, residue, position, is_modified in test_cases:
             rp = reach.process_text(sentence, offline=offline)
             assert rp is not None
             assert len(rp.statements) == 1
-            mcs = rp.statements[0].obj.mods
-            assert len(mcs) == 1
-            assert mcs[0].mod_type == mod_type
-            assert mcs[0].residue == residue
-            assert mcs[0].position == position
-            assert mcs[0].is_modified == is_modified
+            mcs = rp.statements[0].subj.mods
+            assert len(mcs) == 1, 'No mods for %s' % sentence
+            assert mcs[0].mod_type == mod_type, mcs
+            assert mcs[0].residue == residue, mcs
+            assert mcs[0].position == position, mcs
+            assert mcs[0].is_modified == is_modified, mcs
 
 
 def test_get_db_refs_up_human():
@@ -473,3 +469,14 @@ def test_amount_embedded_in_activation():
     assert isinstance(rp.statements[0], IncreaseAmount)
     assert rp.statements[0].subj is not None
     assert rp.statements[0].obj is not None
+
+
+def test_phosphorylation_regulation():
+    here = os.path.dirname(os.path.abspath(__file__))
+    test_file = os.path.join(here, 'reach_reg_phos.json')
+    rp = reach.process_json_file(test_file)
+    assert rp is not None
+    assert len(rp.statements) == 1
+    stmt = rp.statements[0]
+    assert isinstance(stmt, Phosphorylation), stmt
+    assert not stmt.sub.mods

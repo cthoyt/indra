@@ -74,7 +74,7 @@ def signed_nodes_to_signed_edge(source, target):
         return None, None, None
 
 
-def get_sorted_neighbors(G, node, reverse, g_edges):
+def get_sorted_neighbors(G, node, reverse, force_edges=None):
     """Sort the returned neighbors in descending order by belief
 
     Parameters
@@ -86,33 +86,30 @@ def get_sorted_neighbors(G, node, reverse, g_edges):
     reverse : bool
         Indicates direction of search. Neighbors are either successors
         (downstream search) or predecessors (reverse search).
-    g_edges : nx.classes.reportviews.OutMultiEdgeView|OutEdgeView
-        The edges graph property to look up edges and their data from.
-        Typically this is G.edges.
+    force_edges : list
+        A list of allowed edges. If provided, only allow neighbors that
+        can be reached by the allowed edges.
     """
-    neighbors = G.predecessors(node) if reverse else G.successors(node)
-    # Check signed node
-    if isinstance(node, tuple):
-        if reverse:
-            return sorted(
-                neighbors,
-                key=lambda n:
-                    g_edges[signed_nodes_to_signed_edge(n, node)]['belief'],
-                reverse=True
-            )
+    if reverse:
+        if force_edges:
+            neighbors = list(e[0] for e in set(G.in_edges(
+                node)).intersection(set(force_edges)))
         else:
-            return sorted(
-                neighbors,
-                key=lambda n:
-                    g_edges[signed_nodes_to_signed_edge(node, n)]['belief'],
-                reverse=True)
-
+            neighbors = G.predecessors(node)
+        return sorted(
+            neighbors,
+            key=lambda n:
+                G.edges[(n, node)].get('belief', 0),
+            reverse=True
+        )
     else:
-        if reverse:
-            return sorted(neighbors,
-                          key=lambda n: g_edges[(n, node)]['belief'],
-                          reverse=True)
+        if force_edges:
+            neighbors = list(e[1] for e in set(G.out_edges(
+                node)).intersection(set(force_edges)))
         else:
-            return sorted(neighbors,
-                          key=lambda n: g_edges[(node, n)]['belief'],
-                          reverse=True)
+            neighbors = G.successors(node)
+        return sorted(
+            neighbors,
+            key=lambda n:
+                G.edges[(node, n)].get('belief', 0),
+            reverse=True)

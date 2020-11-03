@@ -61,6 +61,7 @@ class WorldOntology(IndraOntology):
         logger.info('Initializing world ontology from %s' % self.url)
         self.add_wm_ontology(self.url)
         self._initialized = True
+        self._build_transitive_closure()
         logger.info('Ontology has %d nodes' % len(self))
 
     def add_wm_ontology(self, url):
@@ -164,8 +165,8 @@ class WorldOntology(IndraOntology):
 
 
 @register_pipeline
-def load_world_ontology():
-    return WorldOntology(wm_ont_url)
+def load_world_ontology(url=wm_ont_url):
+    return WorldOntology(url)
 
 
 world_ontology = load_world_ontology()

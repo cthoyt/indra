@@ -13,10 +13,15 @@ from os.path import abspath, dirname, join
 from jinja2 import Environment, FileSystemLoader
 
 from indra.statements import *
+from indra.sources import SOURCE_INFO
+from indra.statements.agent import default_ns_order
+from indra.statements.validate import validate_id
+from indra.databases.identifiers import get_identifiers_url, ensure_prefix
 from indra.assemblers.english import EnglishAssembler, AgentWithCoordinates
-from indra.databases import get_identifiers_url
 from indra.util.statement_presentation import group_and_sort_statements, \
-    make_top_level_label_from_names_key, make_stmt_from_sort_key
+    make_top_level_label_from_names_key, make_stmt_from_sort_key, \
+    reader_sources, db_sources, all_sources, get_available_source_counts, \
+    get_available_ev_counts, standardize_counts
 from indra.literature import id_lookup
 
 logger = logging.getLogger(__name__)
@@ -31,9 +36,9 @@ default_template = env.get_template('indra/statements_view.html')
 color_schemes = {
     'dark': ['#b2df8a', '#000099', '#6a3d9a', '#1f78b4', '#fdbf6f', '#ff7f00',
              '#cab2d6', '#fb9a99', '#a6cee3', '#33a02c', '#b15928', '#e31a1c'],
-    'light': ['#bc80bd', '#fccde5', '#b3de69', '#80b1d3', '#fb8072', '#bebada',
-              '#fdb462', '#d9d9d9', '#8dd3c7', '#ffed6f', '#ccebc5', '#e0e03d',
-              '#ffe8f4', '#acfcfc', '#dd99ff']
+    'light': ['#bebada', '#fdb462', '#b3de69', '#80b1d3', '#bc80bd', '#fccde5',
+              '#fb8072', '#d9d9d9', '#8dd3c7', '#ffed6f', '#ccebc5', '#e0e03d',
+              '#ffe8f4', '#acfcfc', '#dd99ff', '#00d4a6']
 }
 
 
@@ -43,31 +48,18 @@ def color_gen(scheme):
             yield color
 
 
-db_sources = ['phosphosite', 'cbn', 'pc11', 'biopax', 'bel_lc',
-              'signor', 'biogrid', 'lincs_drug', 'tas', 'hprd', 'trrust',
-              'ctd', 'virhostnet', 'phosphoelm', 'drugbank']
-
-reader_sources = ['geneways', 'tees', 'isi', 'trips', 'rlimsp', 'medscan',
-                  'sparser', 'eidos', 'reach']
-
-all_sources = db_sources + reader_sources
-
-# These are mappings where the actual INDRA source, as it appears
-# in the evidence source_api is inconsistent with the colors here and
-# with what comes out of the INDRA DB
-internal_source_mappings = {
-    'bel': 'bel_lc'
-}
+def make_source_colors(databases, readers):
+    rdr_ord = ['reach', 'sparser', 'medscan', 'trips', 'eidos']
+    readers.sort(key=lambda r: rdr_ord.index(r) if r in rdr_ord else len(rdr_ord))
+    reader_colors_list = list(zip(readers, color_gen('light')))
+    reader_colors_list.reverse()
+    reader_colors = dict(reader_colors_list)
+    db_colors = dict(zip(databases, color_gen('light')))
+    return [('databases', {'color': 'black', 'sources': db_colors}),
+            ('reading', {'color': 'white', 'sources': reader_colors})]
 
 
-SOURCE_COLORS = [
-    ('databases', {'color': 'black',
-                   'sources': dict(zip(db_sources,
-                                       color_gen('light')))}),
-    ('reading', {'color': 'white',
-                 'sources': dict(zip(reader_sources,
-                                     color_gen('light')))}),
-]
+DEFAULT_SOURCE_COLORS = make_source_colors(db_sources, reader_sources)
 
 
 class HtmlAssembler(object):
@@ -132,8 +124,7 @@ class HtmlAssembler(object):
 
     def __init__(self, statements=None, summary_metadata=None, ev_totals=None,
                  ev_counts=None, source_counts=None, curation_dict=None,
-                 title='INDRA Results',
-                 db_rest_url=None):
+                 title='INDRA Results', db_rest_url=None):
         self.title = title
         self.statements = [] if statements is None else statements
         self.metadata = {} if summary_metadata is None \
@@ -159,15 +150,21 @@ class HtmlAssembler(object):
         """
         self.statements += statements
 
-    def make_json_model(self, with_grouping=True):
+    def make_json_model(self, with_grouping=True, no_redundancy=False):
         """Return the JSON used to create the HTML display.
 
         Parameters
         ----------
-        with_grouping : bool
+        with_grouping : Optional[bool]
             If True, statements will be grouped under multiple sub-headings. If
             False, all headings will be collapsed into one on every level, with
-            all statements placed under a single heading.
+            all statements placed under a single heading. Default: False
+        no_redundancy : Optional[bool]
+            If True, any group of statements that was already presented under
+            a previous heading will be skipped. This is typically the case
+            for complexes where different permutations of complex members
+            are presented. By setting this argument to True, these can be
+            eliminated. Default: False
 
         Returns
         -------
@@ -185,6 +182,7 @@ class HtmlAssembler(object):
         stmts = OrderedDict()
         agents = {}
         previous_stmt_set = set()
+        all_previous_stmts = set()
         for row in stmt_rows:
             # Distinguish between the cases with source counts and without.
             if self.source_counts:
@@ -196,8 +194,11 @@ class HtmlAssembler(object):
             curr_stmt_set = {s.get_hash() for s in stmts_group}
             if curr_stmt_set == previous_stmt_set:
                 continue
+            elif no_redundancy and curr_stmt_set <= all_previous_stmts:
+                continue
             else:
                 previous_stmt_set = curr_stmt_set
+                all_previous_stmts |= curr_stmt_set
 
             # We will keep track of some of the meta data for this stmt group.
             # NOTE: Much of the code relies heavily on the fact that the Agent
@@ -329,7 +330,8 @@ class HtmlAssembler(object):
         return stmts
 
     def make_model(self, template=None, with_grouping=True,
-                   add_full_text_search_link=False, **template_kwargs):
+                   add_full_text_search_link=False, no_redundancy=False,
+                   **template_kwargs):
         """Return the assembled HTML content as a string.
 
         Parameters
@@ -345,6 +347,12 @@ class HtmlAssembler(object):
         add_full_text_search_link : bool
             If True, link with Text fragment search in PMC journal will be
             added for the statements.  
+        no_redundancy : Optional[bool]
+            If True, any group of statements that was already presented under
+            a previous heading will be skipped. This is typically the case
+            for complexes where different permutations of complex members
+            are presented. By setting this argument to True, these can be
+            eliminated. Default: False
 
             All other keyword arguments are passed along to the template. If you
             are using a custom template with args that are not passed below, this
@@ -355,7 +363,8 @@ class HtmlAssembler(object):
         str
             The assembled HTML as a string.
         """
-        tl_stmts = self.make_json_model(with_grouping)
+        tl_stmts = self.make_json_model(with_grouping,
+                                        no_redundancy=no_redundancy)
 
         if add_full_text_search_link:
             for statement in tl_stmts:
@@ -389,7 +398,11 @@ class HtmlAssembler(object):
             template_kwargs['source_key_dict'] = \
                 {src: src for src in all_sources}
         if 'source_colors' not in template_kwargs:
-            template_kwargs['source_colors'] = SOURCE_COLORS
+            template_kwargs['source_colors'] = DEFAULT_SOURCE_COLORS
+        if 'source_info' not in template_kwargs:
+            template_kwargs['source_info'] = SOURCE_INFO.copy()
+        if 'simple' not in template_kwargs:
+            template_kwargs['simple'] = True
 
         self.model = template.render(stmt_data=tl_stmts,
                                      metadata=metadata, title=self.title,
@@ -572,27 +585,35 @@ def tag_agents(english, agents):
     return tag_text(english, indices)
 
 
+link_namespace_order = default_ns_order + \
+    ['CHEMBL', 'DRUGBANK', 'PUBCHEM', 'HMDB', 'HMS-LINCS', 'CAS',
+     'IP', 'PF', 'NXPFA', 'MIRBASEM', 'NCIT', 'WM']
+
+
 def id_url(ag):
     # Return identifier URLs in a prioritized order
-    for db_name in ('FPLX', 'HGNC', 'UP',
-                    'GO', 'MESH',
-                    'CHEBI', 'PUBCHEM', 'HMDB', 'DRUGBANK', 'CHEMBL',
-                    'HMS-LINCS', 'CAS',
-                    'IP', 'PF', 'NXPFA',
-                    'MIRBASEM', 'MIRBASE',
-                    'NCIT',
-                    'WM', 'UN', 'HUME', 'CWMS', 'SOFIA'):
+    # TODO: we should add handling for UPPRO here, however, that would require
+    # access to UniProt client resources in the context of the DB REST API
+    # which could be problematic
+    for db_name in link_namespace_order:
         if db_name in ag.db_refs:
             # Handle a special case where a list of IDs is given
             if isinstance(ag.db_refs[db_name], list):
                 db_id = ag.db_refs[db_name][0]
-                if db_name == 'CHEBI':
-                    if not db_id.startswith('CHEBI'):
-                        db_id = 'CHEBI:%s' % db_id
-                elif db_name in ('UN', 'WM', 'HUME'):
+                if db_name == 'WM':
                     db_id = db_id[0]
             else:
                 db_id = ag.db_refs[db_name]
+            # We can add more name spaces here if there are issues
+            if db_name in {'CHEBI'}:
+                db_id = ensure_prefix('CHEBI', db_id)
+            # Here we validate IDs to make sure we don't surface invalid
+            # links.
+            if not validate_id(db_name, db_id):
+                logger.debug('Invalid grounding encountered: %s:%s' %
+                             (db_name, db_id))
+                continue
+            # Finally, we return a valid identifiers.org URL
             return get_identifiers_url(db_name, db_id)
 
 
@@ -657,40 +678,3 @@ def tag_text(text, tag_info_list):
     # Add the last section of text
     format_text += text[start_pos:]
     return format_text
-
-
-def standardize_counts(counts):
-    """Standardize hash-based counts dicts to be int-keyed."""
-    standardized_counts = {}
-    for k, v in counts.items():
-        try:
-            int_k = int(k)
-            standardized_counts[int_k] = v
-        except ValueError:
-            logger.warning('Could not convert statement hash %s to int' % k)
-    return standardized_counts
-
-
-def get_available_ev_counts(stmts):
-    return {stmt.get_hash(): len(stmt.evidence) for stmt in stmts}
-
-
-def get_available_source_counts(stmts):
-    return {stmt.get_hash(): _get_available_ev_source_counts(stmt.evidence)
-            for stmt in stmts}
-
-
-def _get_available_ev_source_counts(evidences):
-    counts = _get_initial_source_counts()
-    for ev in evidences:
-        sa = internal_source_mappings.get(ev.source_api, ev.source_api)
-        try:
-            counts[sa] += 1
-        except KeyError:
-            continue
-    return counts
-
-
-def _get_initial_source_counts():
-    return {s: 0 for s in all_sources}
-

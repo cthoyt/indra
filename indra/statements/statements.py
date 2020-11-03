@@ -90,6 +90,8 @@ The *active* form of an agent (in terms of its post-translational modifications
 or bound state) is indicated by an instance of the class
 :py:class:`ActiveForm`.
 
+Grounding and DB references
+---------------------------
 Agents also carry grounding information which links them to database entries.
 These database references are represented as a dictionary in the `db_refs`
 attribute of each Agent. The dictionary can have multiple entries. For
@@ -98,6 +100,17 @@ UniProt and HGNC IDs in db_refs, whenever possible. FamPlex provides a name
 space for protein families that are typically used in the literature.  More
 information about FamPlex can be found here:
 https://github.com/sorgerlab/famplex
+
+In general, the capitalized version of any identifiers.org name space (see
+https://registry.identifiers.org/ for full list) can be used in db_refs with
+a few cases where INDRA's internal db_refs name space is different from the
+identifiers.org name space (e.g., UP vs uniprot). These special cases can
+be programmatically mapped between INDRA and identifiers.org using the
+`identifiers_mappings` and `identifiers_reverse` dictionaries in the
+`indra.databases.identifiers` module.
+
+Examples of the most commonly encountered db_refs name spaces and IDs are
+listed below.
 
 +------------------------+------------------+------------------------------+
 | Type                   | Database         | Example                      |
@@ -122,7 +135,7 @@ https://github.com/sorgerlab/famplex
 +------------------------+------------------+------------------------------+
 | Chemical               | PubChem          | {'PUBCHEM': '42611257'}      |
 +------------------------+------------------+------------------------------+
-| Chemical               | LINCS / HMS-LINCS| {'LINCS': '42611257'}        |
+| Chemical               | LINCS            | {'LINCS': '42611257'}        |
 +------------------------+------------------+------------------------------+
 | Metabolite             | HMDB             | {'HMDB': 'HMDB00122'}        |
 +------------------------+------------------+------------------------------+
@@ -134,7 +147,7 @@ https://github.com/sorgerlab/famplex
 +------------------------+------------------+------------------------------+
 | Phenotypic abnormality | Human Pheno. Ont.| {'HP': 'HP:0031296'}         |
 +------------------------+------------------+------------------------------+
-| Experimental variables | Exp. Factor Ont. | {'EFO': '0007820'}           |
+| Experimental factors   | Exp. Factor Ont. | {'EFO': '0007820'}           |
 +------------------------+------------------+------------------------------+
 | General terms          | NCIT             | {'NCIT': 'C28597'}           |
 +------------------------+------------------+------------------------------+
@@ -215,7 +228,7 @@ __all__ = [
     'modtype_to_modclass',
     'modclass_to_modtype', 'modtype_conditions', 'modtype_to_inverse',
     'modclass_to_inverse', 'get_statement_by_name', 'make_hash', 'stmt_type',
-    'default_ns_order'
+    'default_ns_order', 'mk_str'
     ]
 
 import abc
@@ -381,6 +394,10 @@ class Statement(object):
                                 "type %s." % type(ag_attr))
         return ag_list
 
+    def real_agent_list(self):
+        """Return all agents in the statement that are not None."""
+        return [a for a in self.agent_list() if a is not None]
+
     def entities_match(self, other):
         self_key = self.entities_match_key()
         other_key = other.entities_match_key()
@@ -497,7 +514,7 @@ class Statement(object):
         if use_sbo:
             sbo_term = get_sbo_term(self.__class__)
             json_dict['sbo'] = \
-                'http://identifiers.org/sbo/SBO:%s' % sbo_term
+                'https://identifiers.org/SBO:%s' % sbo_term
         return json_dict
 
     @classmethod
@@ -646,7 +663,7 @@ class Modification(Statement):
         self.enz = agent_list[0]
         self.sub = agent_list[1]
 
-    def refinement_of(self, other, ontology):
+    def refinement_of(self, other, ontology, entities_refined=False):
         # Make sure the statement types match
         if stmt_type(self) != stmt_type(other):
             return False
@@ -659,8 +676,10 @@ class Modification(Statement):
         elif self.enz is not None and other.enz is None:
             enz_refinement = True
         else:
-            enz_refinement = self.enz.refinement_of(other.enz, ontology)
-        sub_refinement = self.sub.refinement_of(other.sub, ontology)
+            enz_refinement = self.enz.refinement_of(other.enz, ontology,
+                entities_refined=entities_refined)
+        sub_refinement = self.sub.refinement_of(other.sub, ontology,
+            entities_refined=entities_refined)
         if not (enz_refinement and sub_refinement):
             return False
         # For this to be a refinement of the other, the modifications either
@@ -720,13 +739,13 @@ class Modification(Statement):
             if use_sbo:
                 # enzymatic catalyst
                 json_dict['enz']['sbo'] = \
-                    'http://identifiers.org/sbo/SBO:0000460'
+                    'https://identifiers.org/SBO:0000460'
         if self.sub is not None:
             json_dict['sub'] = self.sub.to_json()
             if use_sbo:
                 # substrate
                 json_dict['sub']['sbo'] = \
-                    'http://identifiers.org/sbo/SBO:0000015'
+                    'https://identifiers.org/SBO:0000015'
         if self.residue is not None:
             json_dict['residue'] = self.residue
         if self.position is not None:
@@ -810,13 +829,14 @@ class SelfModification(Statement):
             raise ValueError("SelfModification has one agent.")
         self.enz = agent_list[0]
 
-    def refinement_of(self, other, ontology):
+    def refinement_of(self, other, ontology, entities_refined=False):
         # Make sure the statement types match
         if stmt_type(self) != stmt_type(other):
             return False
 
         # Check agent arguments
-        if not self.enz.refinement_of(other.enz, ontology):
+        if not self.enz.refinement_of(other.enz, ontology,
+                                      entities_refined=entities_refined):
             return False
         # For this to be a refinement of the other, the modifications either
         # have to match or have this one be a subtype of the other; in
@@ -848,7 +868,7 @@ class SelfModification(Statement):
             if use_sbo:
                 # enzymatic catalyst
                 json_dict['enz']['sbo'] = \
-                    'http://identifiers.org/sbo/SBO:0000460'
+                    'https://identifiers.org/SBO:0000460'
         if self.residue is not None:
             json_dict['residue'] = self.residue
         if self.position is not None:
@@ -1041,23 +1061,21 @@ class RegulateActivity(Statement):
         self.subj = agent_list[0]
         self.obj = agent_list[1]
 
-    def refinement_of(self, other, ontology):
+    def refinement_of(self, other, ontology, entities_refined=False):
         # Make sure the statement types match
         if stmt_type(self) != stmt_type(other):
             return False
         if self.is_activation != other.is_activation:
             return False
-        if self.subj.refinement_of(other.subj, ontology) and \
-           self.obj.refinement_of(other.obj, ontology):
-            obj_act_match = (self.obj_activity == other.obj_activity) or \
-                ontology.isa('INDRA_ACTIVITIES', self.obj_activity,
-                             'INDRA_ACTIVITIES', other.obj_activity)
-            if obj_act_match:
-                return True
-            else:
-                return False
-        else:
+        if not (self.subj.refinement_of(other.subj, ontology,
+                                        entities_refined=entities_refined) and
+                self.obj.refinement_of(other.obj, ontology,
+                                       entities_refined=entities_refined)):
             return False
+
+        return ((self.obj_activity == other.obj_activity) or
+                 ontology.isa('INDRA_ACTIVITIES', self.obj_activity,
+                              'INDRA_ACTIVITIES', other.obj_activity))
 
     def contradicts(self, other, ontology):
         # If they aren't opposite classes, it's not a contradiction
@@ -1091,19 +1109,19 @@ class RegulateActivity(Statement):
             if use_sbo:
                 if self.is_activation:
                     json_dict['subj']['sbo'] = \
-                        'http://identifiers.org/sbo/SBO:0000459'  # stimulator
+                        'https://identifiers.org/SBO:0000459'  # stimulator
                 else:
                     json_dict['subj']['sbo'] = \
-                        'http://identifiers.org/sbo/SBO:0000020'  # inhibitor
+                        'https://identifiers.org/SBO:0000020'  # inhibitor
         if self.obj is not None:
             json_dict['obj'] = self.obj.to_json()
             if use_sbo:
                 if self.is_activation:
                     json_dict['obj']['sbo'] = \
-                        'http://identifiers.org/sbo/SBO:0000643'  # stimulated
+                        'https://identifiers.org/SBO:0000643'  # stimulated
                 else:
                     json_dict['obj']['sbo'] = \
-                        'http://identifiers.org/sbo/SBO:0000642'  # inhibited
+                        'https://identifiers.org/SBO:0000642'  # inhibited
         if self.obj_activity is not None:
             json_dict['obj_activity'] = self.obj_activity
         json_dict.update(generic)
@@ -1263,13 +1281,14 @@ class ActiveForm(Statement):
             raise ValueError("ActiveForm has one agent.")
         self.agent = agent_list[0]
 
-    def refinement_of(self, other, ontology):
+    def refinement_of(self, other, ontology, entities_refined=False):
         # Make sure the statement types match
         if stmt_type(self) != stmt_type(other):
             return False
 
         # Check agent arguments
-        if not self.agent.refinement_of(other.agent, ontology):
+        if not self.agent.refinement_of(other.agent, ontology,
+                                        entities_refined=entities_refined):
             return False
 
         # Make sure that the relationships and activities match
@@ -1316,7 +1335,7 @@ class ActiveForm(Statement):
                           'is_active': self.is_active})
         if use_sbo:
             json_dict['agent']['sbo'] = \
-                'http://identifiers.org/sbo/SBO:0000644'  # modified
+                'https://identifiers.org/SBO:0000644'  # modified
         json_dict.update(generic)
         return json_dict
 
@@ -1398,13 +1417,14 @@ class HasActivity(Statement):
             raise ValueError("HasActivity has one agent.")
         self.agent = agent_list[0]
 
-    def refinement_of(self, other, ontology):
+    def refinement_of(self, other, ontology, entities_refined=False):
         # Make sure the statement types match
         if stmt_type(self) != stmt_type(other):
             return False
 
         # Check agent arguments
-        if not self.agent.refinement_of(other.agent, ontology):
+        if not self.agent.refinement_of(other.agent, ontology,
+                                        entities_refined=entities_refined):
             return False
 
         # Make sure that the relationships and activities match
@@ -1473,13 +1493,15 @@ class Gef(Statement):
         s = "Gef(%s, %s)" % (self.gef.name, self.ras.name)
         return s
 
-    def refinement_of(self, other, ontology):
+    def refinement_of(self, other, ontology, entities_refined=False):
         # Make sure the statement types match
         if stmt_type(self) != stmt_type(other):
             return False
         # Check the GEF
-        if self.gef.refinement_of(other.gef, ontology) and \
-           self.ras.refinement_of(other.ras, ontology):
+        if self.gef.refinement_of(other.gef, ontology,
+                                  entities_refined=entities_refined) and \
+           self.ras.refinement_of(other.ras, ontology,
+                                  entities_refined=entities_refined):
             return True
         else:
             return False
@@ -1495,12 +1517,12 @@ class Gef(Statement):
             json_dict['gef'] = self.gef.to_json()
             if use_sbo:
                 json_dict['gef']['sbo'] = \
-                    'http://identifiers.org/sbo/SBO:0000013'  # catalyst
+                    'https://identifiers.org/SBO:0000013'  # catalyst
         if self.ras is not None:
             json_dict['ras'] = self.ras.to_json()
             if use_sbo:
                 json_dict['ras']['sbo'] = \
-                    'http://identifiers.org/sbo/SBO:0000015'  # substrate
+                    'https://identifiers.org/SBO:0000015'  # substrate
         json_dict.update(generic)
         return json_dict
 
@@ -1557,13 +1579,16 @@ class Gap(Statement):
         self.gap = agent_list[0]
         self.ras = agent_list[1]
 
-    def refinement_of(self, other, ontology):
+    def refinement_of(self, other, ontology, entities_refined=False):
         # Make sure the statement types match
         if stmt_type(self) != stmt_type(other):
             return False
+
         # Check the GAP
-        if self.gap.refinement_of(other.gap, ontology) and \
-           self.ras.refinement_of(other.ras, ontology):
+        if self.gap.refinement_of(other.gap, ontology,
+                                  entities_refined=entities_refined) and \
+           self.ras.refinement_of(other.ras, ontology,
+                                  entities_refined=entities_refined):
             return True
         else:
             return False
@@ -1583,12 +1608,12 @@ class Gap(Statement):
             json_dict['gap'] = self.gap.to_json()
             if use_sbo:
                 json_dict['gap']['sbo'] = \
-                    'http://identifiers.org/sbo/SBO:0000013'  # catalyst
+                    'https://identifiers.org/SBO:0000013'  # catalyst
         if self.ras is not None:
             json_dict['ras'] = self.ras.to_json()
             if use_sbo:
                 json_dict['ras']['sbo'] = \
-                    'http://identifiers.org/sbo/SBO:0000015'  # substrate
+                    'https://identifiers.org/SBO:0000015'  # substrate
         json_dict.update(generic)
         return json_dict
 
@@ -1650,7 +1675,7 @@ class Complex(Statement):
                         (', '.join([('%s' % m) for m in self.members])))
         return s
 
-    def refinement_of(self, other, ontology):
+    def refinement_of(self, other, ontology, entities_refined=False):
         # Make sure the statement types match
         if stmt_type(self) != stmt_type(other):
             return False
@@ -1726,13 +1751,14 @@ class Translocation(Statement):
              (self.agent, self.from_location, self.to_location))
         return s
 
-    def refinement_of(self, other, ontology):
+    def refinement_of(self, other, ontology, entities_refined=False):
         from indra.databases import go_client
         # Make sure the statement types match
         if stmt_type(self) != stmt_type(other):
             return False
         # Check several conditions for refinement
-        ref1 = self.agent.refinement_of(other.agent, ontology)
+        ref1 = self.agent.refinement_of(other.agent, ontology,
+                                        entities_refined=entities_refined)
         ofl = go_client.get_go_id_from_label(other.from_location)
         sfl = go_client.get_go_id_from_label(self.from_location)
         otl = go_client.get_go_id_from_label(other.to_location)
@@ -1817,19 +1843,19 @@ class RegulateAmount(Statement):
             if use_sbo:
                 if isinstance(self, IncreaseAmount):
                     json_dict['subj']['sbo'] = \
-                        'http://identifiers.org/sbo/SBO:0000459'  # stimulator
+                        'https://identifiers.org/SBO:0000459'  # stimulator
                 else:
                     json_dict['subj']['sbo'] = \
-                        'http://identifiers.org/sbo/SBO:0000020'  # inhibitor
+                        'https://identifiers.org/SBO:0000020'  # inhibitor
         if self.obj is not None:
             json_dict['obj'] = self.obj.to_json()
             if use_sbo:
                 if isinstance(self, IncreaseAmount):
                     json_dict['obj']['sbo'] = \
-                        'http://identifiers.org/sbo/SBO:0000011'  # product
+                        'https://identifiers.org/SBO:0000011'  # product
                 else:
                     json_dict['obj']['sbo'] = \
-                        'http://identifiers.org/sbo/SBO:0000010'  # reactant
+                        'https://identifiers.org/SBO:0000010'  # reactant
         json_dict.update(generic)
         return json_dict
 
@@ -1844,7 +1870,7 @@ class RegulateAmount(Statement):
         stmt = cls(subj, obj)
         return stmt
 
-    def refinement_of(self, other, ontology):
+    def refinement_of(self, other, ontology, entities_refined=False):
         # Make sure the statement types match
         if stmt_type(self) != stmt_type(other):
             return False
@@ -1857,9 +1883,13 @@ class RegulateAmount(Statement):
         elif self.subj is not None and other.subj is None:
             subj_refinement = True
         else:
-            subj_refinement = self.subj.refinement_of(other.subj, ontology)
-        obj_refinement = self.obj.refinement_of(other.obj, ontology)
-        return (subj_refinement and obj_refinement)
+            subj_refinement = \
+                self.subj.refinement_of(other.subj, ontology,
+                                        entities_refined=entities_refined)
+        obj_refinement = \
+            self.obj.refinement_of(other.obj, ontology,
+                                   entities_refined=entities_refined)
+        return subj_refinement and obj_refinement
 
     def equals(self, other):
         matches = super(RegulateAmount, self).equals(other)
@@ -1868,7 +1898,7 @@ class RegulateAmount(Statement):
     def contradicts(self, other, ontology):
         # If they aren't opposite classes, it's not a contradiction
         if {self.__class__, other.__class__} != \
-            {IncreaseAmount, DecreaseAmount}:
+                {IncreaseAmount, DecreaseAmount}:
             return False
         # Skip all instances of not fully specified statements
         agents = (self.subj, self.obj, other.subj, other.obj)
@@ -1944,16 +1974,16 @@ class Influence(Statement):
         self.subj = subj
         self.obj = obj
 
-    def refinement_of(self, other, ontology):
+    def refinement_of(self, other, ontology, entities_refined=False):
         # Make sure the statement types match
         if stmt_type(self) != stmt_type(other):
             return False
 
         # Check agent arguments
         subj_refinement = self.subj.concept.refinement_of(
-            other.subj.concept, ontology)
+            other.subj.concept, ontology, entities_refined=entities_refined)
         obj_refinement = self.obj.concept.refinement_of(
-            other.obj.concept, ontology)
+            other.obj.concept, ontology, entities_refined=entities_refined)
         op = other.overall_polarity()
         sp = self.overall_polarity()
         # If we have "less" polarity here than in other then it's
@@ -2126,8 +2156,10 @@ class Association(Complex):
             sorted_agents(self.members)
         return [m.concept for m in members]
 
-    def refinement_of(self, other, ontology):
-        members_refinement = super().refinement_of(other, ontology)
+    def refinement_of(self, other, ontology, entities_refined=False):
+        members_refinement = \
+            super().refinement_of(other, ontology,
+                                  entities_refined=entities_refined)
         op = other.overall_polarity()
         sp = self.overall_polarity()
         if self.polarity_count() < other.polarity_count():
@@ -2267,17 +2299,17 @@ class Conversion(Statement):
             json_dict['subj'] = self.subj.to_json()
             if use_sbo:
                 json_dict['subj']['sbo'] = \
-                    'http://identifiers.org/sbo/SBO:0000013'  # catalyst
+                    'https://identifiers.org/SBO:0000013'  # catalyst
         json_dict['obj_from'] = [o.to_json() for o in self.obj_from]
         if use_sbo:
             for of in json_dict['obj_from']:
                 of['sbo'] = \
-                    'http://identifiers.org/sbo/SBO:0000010'  # reactant
+                    'https://identifiers.org/SBO:0000010'  # reactant
         json_dict['obj_to'] = [o.to_json() for o in self.obj_to]
         if use_sbo:
             for ot in json_dict['obj_to']:
                 ot['sbo'] = \
-                    'http://identifiers.org/sbo/SBO:0000011'  # product
+                    'https://identifiers.org/SBO:0000011'  # product
         json_dict.update(generic)
         return json_dict
 
@@ -2295,7 +2327,7 @@ class Conversion(Statement):
         stmt = cls(subj, obj_from, obj_to)
         return stmt
 
-    def refinement_of(self, other, ontology):
+    def refinement_of(self, other, ontology, entities_refined=False):
         # Make sure the statement types match
         if stmt_type(self) != stmt_type(other):
             return False
@@ -2368,8 +2400,10 @@ class Event(Statement):
         mk = (self.concept.matches_key(),)
         return str(mk)
 
-    def refinement_of(self, other, ontology):
-        concept_ref = self.concept.refinement_of(other.concept, ontology)
+    def refinement_of(self, other, ontology, entities_refined=False):
+        concept_ref = \
+            self.concept.refinement_of(other.concept, ontology,
+                                       entities_refined=entities_refined)
         pol_ref = (self.delta.polarity and not other.delta.polarity) or \
             self.delta.polarity == other.delta.polarity
         return concept_ref and pol_ref

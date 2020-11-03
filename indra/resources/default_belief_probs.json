@@ -16,7 +16,6 @@
     "cwms": 0.05,
     "hume": 0.05,
     "sofia": 0.05,
-    "lincs_drug": 0.01,
     "tas": 0.01,
     "rlimsp": 0.05,
     "hprd": 0.01,
@@ -28,7 +27,9 @@
     "hypothes.is": 0.01,
     "virhostnet": 0.01,
     "ctd": 0.01,
-    "drugbank": 0.01
+    "drugbank": 0.01,
+    "omnipath": 0.01,
+    "biofactoid": 0.01
   },
   "rand": {
     "eidos": 0.3,
@@ -47,7 +48,6 @@
     "cwms": 0.3,
     "hume": 0.3,
     "sofia": 0.3,
-    "lincs_drug": 0.3,
     "tas": 0.1,
     "rlimsp": 0.3,
     "hprd": 0.1,
@@ -59,6 +59,8 @@
     "hypothes.is": 0.1,
     "virhostnet": 0.1,
     "ctd": 0.1,
-    "drugbank": 0.1
+    "drugbank": 0.1,
+    "omnipath": 0.1,
+    "biofactoid": 0.1
   }
 }
